@@ -2,15 +2,14 @@ import { Connection, PublicKey } from '@solana/web3.js';
 import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { DialectConnection } from './dialect-connection';
 import { getRealms, getAllProposals, Realm, ProgramAccount, Proposal } from '@solana/spl-governance';
+import { TwitterNotificationsSink, TwitterNotification } from './twitter-notifications-sink';
 
 import {
   Data,
   Monitors,
-  Notification,
   NotificationSink,
   Operators,
   Pipelines,
-  ResourceId,
   SourceData,
 } from '@dialectlabs/monitor';
 import { Duration } from 'luxon';
@@ -35,48 +34,27 @@ interface RealmData {
   realm: RealmWithProposals;
 }
 
-interface TwitterNotification {
-  message: string;
-}
-
 /*
-Squads use case:
-When a member is added or removed from a squad -
-1. send a notification to the *other* members of that squad
+Realms use case:
+When a proposal is added to a realm -
+1. send a tweet out
 
 ---
 
 * global data fetch
-1. Fetch all squads
-2. Flatmap members to huge array
+1. Fetch all realms
+2. Fetch all proposals
 
 * filter or detect diff
-3. Look for diffs in that single array
-4. When finding a member added or removed
-
-* Find subscribers to message
-5. Find squad
-6. Find members of squad that are not the one that just changed
-7. Send message
+3. Look for diffs in the proposals array
+4. When finding a proposal added or removed
+5. Send out tweet for new proposal
 */
-
-export class ConsoleNotificationSink
-  implements NotificationSink<TwitterNotification>
-{
-  push(notification: TwitterNotification, recipients: ResourceId[]): Promise<void> {
-    console.log(
-      `Got new notification ${JSON.stringify(
-        notification,
-      )} for recipients ${recipients}`,
-    );
-    return Promise.resolve();
-  }
-}
 
 @Injectable()
 export class MonitoringService implements OnModuleInit, OnModuleDestroy {
   private readonly notificationSink: NotificationSink<TwitterNotification> =
-    new ConsoleNotificationSink();
+    new TwitterNotificationsSink();
 
   constructor(
     private readonly dialectConnection: DialectConnection, // private readonly squadsService: SquadsService,
@@ -108,7 +86,9 @@ export class MonitoringService implements OnModuleInit, OnModuleDestroy {
               upstream
                 .pipe(
                   Operators.Window.fixedSizeSliding<RealmWithProposals, RealmData>(2),
-                  Operators.Transform.filter((it) => it.length == 2),
+                  Operators.Transform.filter((it) => {
+                    return it.length == 2
+                  }),
                 )
                 .pipe(
                   Operators.Transform.map(([d1, d2]) => {
@@ -140,38 +120,24 @@ export class MonitoringService implements OnModuleInit, OnModuleDestroy {
         ],
       })
       .notify()
-      .custom<TwitterNotification>((data) => {
+      .custom<TwitterNotification>(({ value, context }) => {
+          const realmName = context.origin.realm.realm.account.name;
 
-          return {message: `Your cratio = ${data.value} above warning threshold`};
+          const message = [
+            ...value.added.map(
+              (it) =>
+                `📜 New proposal: ${it.account.name} added to realm ${realmName} by ${it.owner}. Link to more: ${it.account.descriptionLink}.`,
+            ),
+          ].join('\n');
+
+          console.log(`Sending tweet for ${realmName} : ${message}`);
+
+          return {
+            message
+          };
         },
         this.notificationSink,
       )
-      // .dialectThread(
-      //   ({ value, context }) => {
-      //     const message = [
-      //       ...value.added.map(
-      //         (it) =>
-      //           `🚀 New member ${it.publicKey} added to squad ${context.origin.squad.squadName}`,
-      //       ),
-      //       ...value.removed.map(
-      //         (it) =>
-      //           `💰 Member ${it.publicKey} removed from squad ${context.origin.squad.squadName}`,
-      //       ),
-      //     ].join('\n');
-      //     console.log(message);
-      //     return {
-      //       message: message,
-      //     };
-      //   },
-      //   (
-      //     {
-      //       context: {
-      //         origin: { squadMembersSubscribedToNotifications },
-      //       },
-      //     },
-      //     recipient,
-      //   ) => !!squadMembersSubscribedToNotifications[recipient.toBase58()], // TODO: removed or added members will also receive notification, but I think it's not a problem for the first iteration
-      // )
       .and()
       .dispatch('broadcast')
       .build();
@@ -189,7 +155,6 @@ export class MonitoringService implements OnModuleInit, OnModuleDestroy {
     });
 
     const realmsData = await Promise.all(realmsPromises);
-
     return realmsData.map((it) => {
       const sourceData: SourceData<RealmData> = {
         resourceId: it.realm.pubkey,

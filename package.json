@@ -24,6 +24,7 @@
     "@dialectlabs/web3": "^0.1.11",
     "@metaplex/js": "^4.12.0",
     "@nestjs/common": "^8.0.0",
+    "@nestjs/config": "^2.0.0",
     "@nestjs/core": "^8.0.0",
     "@nestjs/platform-express": "^8.0.0",
     "@nestjs/swagger": "^5.2.0",
@@ -46,7 +47,8 @@
     "reflect-metadata": "^0.1.13",
     "rimraf": "^3.0.2",
     "rxjs": "^7.5.2",
-    "swagger-ui-express": "^4.3.0"
+    "swagger-ui-express": "^4.3.0",
+    "twitter-api-v2": "^1.11.3"
   },
   "devDependencies": {
     "@nestjs/cli": "^8.0.0",
