@@ -1,39 +1,43 @@
 import { Connection, PublicKey } from '@solana/web3.js';
 import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { DialectConnection } from './dialect-connection';
-// import { SquadsService } from '../squads/squads.service';
+import { getRealms, getAllProposals, Realm, ProgramAccount, Proposal } from '@solana/spl-governance';
+
 import {
   Data,
   Monitors,
+  Notification,
+  NotificationSink,
   Operators,
   Pipelines,
   ResourceId,
   SourceData,
 } from '@dialectlabs/monitor';
-import { Squad, SquadMember } from '../api/squad';
 import { Duration } from 'luxon';
-import { getMultipleSquadAccounts } from '../api/parseSquad';
 
-// don't need subscribers
-const mainnetStagingPk = new PublicKey(
-  'og295qHEFgcX6WyaMLKQPwDMdMxuHoXe7oQ7ywwyRMo',
+const mainnetPK = new PublicKey(
+  'GovER5Lthms3bLBqWub97yVrMmEogzX7xNjdXpPPCVZw',
 );
 const PROVIDER_URL =
   'https://solana-api.syndica.io/access-token/6sW38nSZ1Qm4WVRN4Vnbjb9EF2QudlpGZBToMtPyqoXqkIenDwJ5FVK1HdWSqqah/rpc';
 const connection = new Connection(PROVIDER_URL);
 
-interface SquadData {
-  squad: Squad;
-  squadMembersSubscribedToNotifications: Record<string, PublicKey>;
+interface ProposalsChanged {
+  added: ProgramAccount<Proposal>[];
 }
 
-interface SquadMembersChanged {
-  added: SquadMember[];
-  removed: SquadMember[];
+interface RealmWithProposals {
+  realm: ProgramAccount<Realm>;
+  proposals: ProgramAccount<Proposal>[];
 }
 
-// const isStaging = process.env['NX_ENVIRONMENT'] === 'mainnet-staging';
-// console.log('isStaging', isStaging);
+interface RealmData {
+  realm: RealmWithProposals;
+}
+
+interface TwitterNotification {
+  message: string;
+}
 
 /*
 Squads use case:
@@ -56,8 +60,24 @@ When a member is added or removed from a squad -
 7. Send message
 */
 
+export class ConsoleNotificationSink
+  implements NotificationSink<TwitterNotification>
+{
+  push(notification: TwitterNotification, recipients: ResourceId[]): Promise<void> {
+    console.log(
+      `Got new notification ${JSON.stringify(
+        notification,
+      )} for recipients ${recipients}`,
+    );
+    return Promise.resolve();
+  }
+}
+
 @Injectable()
 export class MonitoringService implements OnModuleInit, OnModuleDestroy {
+  private readonly notificationSink: NotificationSink<TwitterNotification> =
+    new ConsoleNotificationSink();
+
   constructor(
     private readonly dialectConnection: DialectConnection, // private readonly squadsService: SquadsService,
   ) {}
@@ -75,142 +95,109 @@ export class MonitoringService implements OnModuleInit, OnModuleDestroy {
       monitorKeypair: this.dialectConnection.getKeypair(),
       dialectProgram: this.dialectConnection.getProgram(),
     })
-      .defineDataSource<SquadData>()
+      .defineDataSource<RealmData>()
       .poll(
-        async (subscribers) => this.getSquads(subscribers),
+        async () => this.getRealmsData(),
         Duration.fromObject({ seconds: 10 }),
       )
-      .transform<Squad, SquadMembersChanged>({
-        keys: ['squad'],
+      .transform<RealmWithProposals, ProposalsChanged>({
+        keys: ['realm'],
         pipelines: [
-          Pipelines.createNew<Squad, SquadData, SquadMembersChanged>(
+          Pipelines.createNew<RealmWithProposals, RealmData, ProposalsChanged>(
             (upstream) =>
               upstream
                 .pipe(
-                  Operators.Window.fixedSizeSliding<Squad, SquadData>(2),
+                  Operators.Window.fixedSizeSliding<RealmWithProposals, RealmData>(2),
                   Operators.Transform.filter((it) => it.length == 2),
                 )
                 .pipe(
                   Operators.Transform.map(([d1, d2]) => {
-                    const membersAdded = d2.value.members.filter(
-                      ({ publicKey: member2 }) =>
-                        !d1.value.members.find(({ publicKey: member1 }) =>
-                          member2.equals(member1),
+                    const proposalsAdded = d2.value.proposals.filter(
+                      ({ pubkey: proposal2 }) =>
+                        !d1.value.proposals.find(({ pubkey: proposal1 }) =>
+                        proposal2.equals(proposal1),
                         ),
                     );
-                    const membersRemoved = d1.value.members.filter(
-                      ({ publicKey: member1 }) =>
-                        !d2.value.members.find(({ publicKey: member2 }) =>
-                          member2.equals(member1),
-                        ),
-                    );
-                    const squadsMembersChanged: Data<
-                      SquadMembersChanged,
-                      SquadData
+                    const proposalsChanged: Data<
+                      ProposalsChanged,
+                      RealmData
                     > = {
                       value: {
-                        added: membersAdded,
-                        removed: membersRemoved,
+                        added: proposalsAdded,
                       },
                       context: d2.context,
                     };
-                    return squadsMembersChanged;
+                    return proposalsChanged;
                   }),
                 )
                 .pipe(
                   Operators.Transform.filter(
-                    ({ value: { added, removed } }) =>
-                      added.length + removed.length > 0,
+                    ({ value: { added } }) =>
+                      added.length > 0,
                   ),
                 ),
           ),
         ],
       })
       .notify()
-      .dialectThread(
-        ({ value, context }) => {
-          const message = [
-            ...value.added.map(
-              (it) =>
-                `🚀 New member ${it.publicKey} added to squad ${context.origin.squad.squadName}`,
-            ),
-            ...value.removed.map(
-              (it) =>
-                `💰 Member ${it.publicKey} removed from squad ${context.origin.squad.squadName}`,
-            ),
-          ].join('\n');
-          console.log(message);
-          return {
-            message: message,
-          };
+      .custom<TwitterNotification>((data) => {
+
+          return {message: `Your cratio = ${data.value} above warning threshold`};
         },
-        (
-          {
-            context: {
-              origin: { squadMembersSubscribedToNotifications },
-            },
-          },
-          recipient,
-        ) => !!squadMembersSubscribedToNotifications[recipient.toBase58()], // TODO: removed or added members will also receive notification, but I think it's not a problem for the first iteration
+        this.notificationSink,
       )
+      // .dialectThread(
+      //   ({ value, context }) => {
+      //     const message = [
+      //       ...value.added.map(
+      //         (it) =>
+      //           `🚀 New member ${it.publicKey} added to squad ${context.origin.squad.squadName}`,
+      //       ),
+      //       ...value.removed.map(
+      //         (it) =>
+      //           `💰 Member ${it.publicKey} removed from squad ${context.origin.squad.squadName}`,
+      //       ),
+      //     ].join('\n');
+      //     console.log(message);
+      //     return {
+      //       message: message,
+      //     };
+      //   },
+      //   (
+      //     {
+      //       context: {
+      //         origin: { squadMembersSubscribedToNotifications },
+      //       },
+      //     },
+      //     recipient,
+      //   ) => !!squadMembersSubscribedToNotifications[recipient.toBase58()], // TODO: removed or added members will also receive notification, but I think it's not a problem for the first iteration
+      // )
       .and()
       .dispatch('broadcast')
       .build();
     monitor.start();
   }
 
-  private async getSquads(
-    subscribers: ResourceId[],
-  ): Promise<SourceData<SquadData>[]> {
-    console.log(`Polling data for ${subscribers.length}`);
-    const programAccounts = await connection.getProgramAccounts(
-      mainnetStagingPk,
-    );
-    // squads
-    const squadsAccounts = programAccounts.filter(
-      (it) => it.account.data.length > 8000,
-    );
-    console.log(`Total squads accounts: ${squadsAccounts.length}`);
-    const deserializedSquads = await getMultipleSquadAccounts(
-      connection,
-      squadsAccounts.map((it) => it.pubkey).slice(),
-    );
-    console.log("deserialized squads", deserializedSquads);
-    const subscribersSet = Object.fromEntries(
-      subscribers.map((it) => [it.toBase58(), it]),
-    );
-    // don't need subscribers
-    return deserializedSquads.map((it) => {
-      const members = this.getMembers(it, subscribers);
-      const sourceData: SourceData<SquadData> = {
-        resourceId: it.pubkey,
+  private async getRealmsData(): Promise<SourceData<RealmData>[]> {
+    const realms = await getRealms(connection, mainnetPK);
+
+    const realmsPromises = realms.map(async realm => {
+      return {
+        realm: realm,
+        proposals: (await getAllProposals(connection, mainnetPK, realm.pubkey)).flat(),
+      };
+    });
+
+    const realmsData = await Promise.all(realmsPromises);
+
+    return realmsData.map((it) => {
+      const sourceData: SourceData<RealmData> = {
+        resourceId: it.realm.pubkey,
         data: {
-          squad: { ...it, members },
-          squadMembersSubscribedToNotifications: Object.fromEntries(
-            members
-              .map((it) => it.publicKey)
-              .filter((it) => subscribersSet[it.toBase58()])
-              .map((it) => [it.toBase58(), it]),
-          ),
+          realm: it,
         },
       };
       return sourceData;
     });
-  }
-
-  private getMembers(it: Squad, subscribers: ResourceId[]) {
-    if (process.env.TEST_MODE) {
-      const sliced = it.members.slice(
-        0,
-        Math.min(it.members.length, subscribers.length),
-      );
-      return sliced
-        .map((it, idx) => ({
-          ...it,
-          publicKey: subscribers[idx],
-        }))
-        .slice(0, Math.round(Math.random() * sliced.length));
-    }
-    return it.members;
   }
 }
