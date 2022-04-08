@@ -33,6 +33,7 @@
     "@saberhq/chai-solana": "^1.11.3",
     "@saberhq/solana-contrib": "^1.11.3",
     "@saberhq/token-utils": "^1.11.3",
+    "@solana/spl-governance": "^0.0.34",
     "@solana/spl-token": "^0.1.8",
     "@solana/spl-token-registry": "^0.2.3266",
     "@solana/web3.js": "1.31.0",
