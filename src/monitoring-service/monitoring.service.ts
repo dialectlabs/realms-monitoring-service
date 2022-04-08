@@ -126,7 +126,7 @@ export class MonitoringService implements OnModuleInit, OnModuleDestroy {
           const message = [
             ...value.added.map(
               (it) =>
-                `📜 New proposal: ${it.account.name} added to realm ${realmName} by ${it.owner}. Link to more: ${it.account.descriptionLink}.`,
+                `📜 New proposal: ${it.account.name} added to ${realmName} by ${it.owner}.${it.account.descriptionLink ? ` Link to: ${it.account.descriptionLink}` : ''}`,
             ),
           ].join('\n');
 
