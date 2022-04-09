@@ -1,7 +1,7 @@
 import { Connection, PublicKey } from '@solana/web3.js';
 import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { DialectConnection } from './dialect-connection';
-import { getRealms, getAllProposals, Realm, ProgramAccount, Proposal } from '@solana/spl-governance';
+import { getRealms, getAllProposals, Realm, ProgramAccount, Proposal, getAllTokenOwnerRecords } from '@solana/spl-governance';
 import { TwitterNotificationsSink, TwitterNotification } from './twitter-notifications-sink';
 
 import {
@@ -10,6 +10,7 @@ import {
   NotificationSink,
   Operators,
   Pipelines,
+  ResourceId,
   SourceData,
 } from '@dialectlabs/monitor';
 import { Duration } from 'luxon';
@@ -32,6 +33,7 @@ interface RealmWithProposals {
 
 interface RealmData {
   realm: RealmWithProposals;
+  realmMembersSubscribedToNotifications: Record<string, PublicKey>;
 }
 
 /*
@@ -75,7 +77,7 @@ export class MonitoringService implements OnModuleInit, OnModuleDestroy {
     })
       .defineDataSource<RealmData>()
       .poll(
-        async () => this.getRealmsData(),
+        async (subscribers) => this.getRealmsData(subscribers),
         Duration.fromObject({ seconds: 10 }),
       )
       .transform<RealmWithProposals, ProposalsChanged>({
@@ -120,15 +122,28 @@ export class MonitoringService implements OnModuleInit, OnModuleDestroy {
         ],
       })
       .notify()
+      .dialectThread(
+        ({ value, context }) => {
+          const realmName: string = context.origin.realm.realm.account.name;
+          const message: string = this.constructMessage(realmName, value);
+          console.log(`Sending dialect message: ${message}`);
+          return {
+            message: message,
+          };
+        },
+        (
+          {
+            context: {
+              origin: { realmMembersSubscribedToNotifications },
+            },
+          },
+          recipient,
+        ) => !!realmMembersSubscribedToNotifications[recipient.toBase58()],
+      )
       .custom<TwitterNotification>(({ value, context }) => {
-          const realmName = context.origin.realm.realm.account.name;
+          const realmName: string = context.origin.realm.realm.account.name;
 
-          const message = [
-            ...value.added.map(
-              (it) =>
-                `📜 New proposal: ${it.account.name} added to ${realmName} by ${it.owner}.${it.account.descriptionLink ? ` Link to: ${it.account.descriptionLink}` : ''}`,
-            ),
-          ].join('\n');
+          const message = this.constructMessage(realmName, value);
 
           console.log(`Sending tweet for ${realmName} : ${message}`);
 
@@ -144,15 +159,30 @@ export class MonitoringService implements OnModuleInit, OnModuleDestroy {
     monitor.start();
   }
 
-  private async getRealmsData(): Promise<SourceData<RealmData>[]> {
+  private constructMessage(realmName: string, proposalsChanged: ProposalsChanged): string {
+    return [
+      ...proposalsChanged.added.map(
+        (it) =>
+          `📜 New proposal: ${it.account.name} added to ${realmName} by ${it.owner}.${it.account.descriptionLink ? ` Link to: ${it.account.descriptionLink}` : ''}`,
+      ),
+    ].join('\n');
+  }
+
+  private async getRealmsData(subscribers: ResourceId[]): Promise<SourceData<RealmData>[]> {
+    console.log("these are the subscribers: ", subscribers);
     const realms = await getRealms(connection, mainnetPK);
 
     const realmsPromises = realms.map(async realm => {
       return {
         realm: realm,
         proposals: (await getAllProposals(connection, mainnetPK, realm.pubkey)).flat(),
+        tokenOwnerRecords: await getAllTokenOwnerRecords(connection, mainnetPK, realm.pubkey),
       };
     });
+
+    const subscribersSet = Object.fromEntries(
+      subscribers.map((it) => [it.toBase58(), it]),
+    );
 
     const realmsData = await Promise.all(realmsPromises);
     return realmsData.map((it) => {
@@ -160,6 +190,12 @@ export class MonitoringService implements OnModuleInit, OnModuleDestroy {
         resourceId: it.realm.pubkey,
         data: {
           realm: it,
+          realmMembersSubscribedToNotifications: Object.fromEntries(
+            it.tokenOwnerRecords
+              .map((it) => it.account.governingTokenOwner)
+              .filter((it) => subscribersSet[it.toBase58()])
+              .map((it) => [it.toBase58(), it]),
+          ),
         },
       };
       return sourceData;
