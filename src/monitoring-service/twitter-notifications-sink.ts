@@ -19,13 +19,13 @@ export class TwitterNotificationsSink
 
   async push(
     notification: TwitterNotification,
-    recipients: ResourceId[],
   ): Promise<void> {
     this.logger.log(notification.message);
-    return this.twitterClient.v2
+    await this.twitterClient.v2
       .tweet({
         text: notification.message,
       })
-      .then(() => {});
+      .catch(() => this.logger.error(it));
+    return;
   }
 }
