@@ -20,10 +20,8 @@ import {
 } from './twitter-notifications-sink';
 
 import {
-  Data,
   Monitors,
   NotificationSink,
-  Operators,
   Pipelines,
   ResourceId,
   SourceData,
@@ -38,13 +36,9 @@ interface ProposalsChanged {
   added: ProgramAccount<Proposal>[];
 }
 
-interface RealmWithProposals {
+interface RealmData {
   realm: ProgramAccount<Realm>;
   proposals: ProgramAccount<Proposal>[];
-}
-
-interface RealmData {
-  realm: RealmWithProposals;
   realmMembersSubscribedToNotifications: Record<string, PublicKey>;
 }
 
@@ -92,51 +86,14 @@ export class MonitoringService implements OnModuleInit, OnModuleDestroy {
         async (subscribers) => this.getRealmsData(subscribers),
         Duration.fromObject({ seconds: 60 }),
       )
-      .transform<RealmWithProposals, ProposalsChanged>({
-        keys: ['realm'],
-        pipelines: [
-          Pipelines.createNew<RealmWithProposals, RealmData, ProposalsChanged>(
-            (upstream) =>
-              upstream
-                .pipe(
-                  Operators.Window.fixedSizeSliding<
-                    RealmWithProposals,
-                    RealmData
-                  >(2),
-                  Operators.Transform.filter((it) => {
-                    return it.length == 2;
-                  }),
-                )
-                .pipe(
-                  Operators.Transform.map(([d1, d2]) => {
-                    const proposalsAdded = d2.value.proposals.filter(
-                      ({ pubkey: proposal2 }) =>
-                        !d1.value.proposals.find(({ pubkey: proposal1 }) =>
-                          proposal2.equals(proposal1),
-                        ),
-                    );
-                    const proposalsChanged: Data<ProposalsChanged, RealmData> =
-                      {
-                        value: {
-                          added: proposalsAdded,
-                        },
-                        context: d2.context,
-                      };
-                    return proposalsChanged;
-                  }),
-                )
-                .pipe(
-                  Operators.Transform.filter(
-                    ({ value: { added } }) => added.length > 0,
-                  ),
-                ),
-          ),
-        ],
+      .transform<ProgramAccount<Proposal>[], ProgramAccount<Proposal>[]>({
+        keys: ['proposals'],
+        pipelines: [Pipelines.added((p1, p2) => p1.pubkey.equals(p2.pubkey))],
       })
       .notify()
       .dialectThread(
         ({ value, context }) => {
-          const realmName: string = context.origin.realm.realm.account.name;
+          const realmName: string = context.origin.realm.account.name;
           const message: string = this.constructMessage(realmName, value);
           this.logger.log(`Sending dialect message: ${message}`);
           return {
@@ -153,7 +110,7 @@ export class MonitoringService implements OnModuleInit, OnModuleDestroy {
         ) => !!realmMembersSubscribedToNotifications[recipient.toBase58()],
       )
       .custom<TwitterNotification>(({ value, context }) => {
-        const realmName: string = context.origin.realm.realm.account.name;
+        const realmName: string = context.origin.realm.account.name;
         const message = this.constructMessage(realmName, value);
         this.logger.log(`Sending tweet for ${realmName} : ${message}`);
         return {
@@ -168,10 +125,10 @@ export class MonitoringService implements OnModuleInit, OnModuleDestroy {
 
   private constructMessage(
     realmName: string,
-    proposalsChanged: ProposalsChanged,
+    proposalsAdded: ProgramAccount<Proposal>[],
   ): string {
     return [
-      ...proposalsChanged.added.map(
+      ...proposalsAdded.map(
         (it) =>
           `📜 New proposal: ${it.account.name} added to ${realmName} by ${
             it.owner
@@ -225,9 +182,9 @@ export class MonitoringService implements OnModuleInit, OnModuleDestroy {
       const sourceData: SourceData<RealmData> = {
         resourceId: it.realm.pubkey,
         data: {
-          realm: it,
-          realmMembersSubscribedToNotifications:
-            realmMembersSubscribedToNotifications,
+          realm: it.realm,
+          proposals: it.proposals,
+          realmMembersSubscribedToNotifications,
         },
       };
       return sourceData;
