@@ -1,10 +1,12 @@
 import { TwitterApi } from 'twitter-api-v2';
 import { Logger } from '@nestjs/common';
-import { NotificationSink, ResourceId } from '@dialectlabs/monitor';
+import { NotificationSink } from '@dialectlabs/monitor';
 
 export interface TwitterNotification {
   message: string;
 }
+
+const maxMsgLen = 250;
 
 export class TwitterNotificationsSink
   implements NotificationSink<TwitterNotification>
@@ -17,13 +19,17 @@ export class TwitterNotificationsSink
     accessSecret: process.env.TWITTER_ACCESS_SECRET,
   });
 
-  async push(
-    notification: TwitterNotification,
-  ): Promise<void> {
-    this.logger.log(notification.message);
+  async push({ message }: TwitterNotification): Promise<void> {
+    let shortenedText = message.replace(/\s+/g, ' ').slice(0, maxMsgLen);
+    const lastIndexOfSpace = shortenedText.lastIndexOf(' ');
+    shortenedText =
+      lastIndexOfSpace === -1
+        ? shortenedText
+        : shortenedText.slice(0, lastIndexOfSpace);
+    this.logger.log(shortenedText);
     await this.twitterClient.v2
       .tweet({
-        text: notification.message,
+        text: shortenedText,
       })
       .catch(() => this.logger.error(it));
     return;
