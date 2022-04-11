@@ -1,8 +1,23 @@
 import { Connection, PublicKey } from '@solana/web3.js';
-import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  OnModuleDestroy,
+  OnModuleInit,
+} from '@nestjs/common';
 import { DialectConnection } from './dialect-connection';
-import { getRealms, getAllProposals, Realm, ProgramAccount, Proposal, getAllTokenOwnerRecords } from '@solana/spl-governance';
-import { TwitterNotificationsSink, TwitterNotification } from './twitter-notifications-sink';
+import {
+  getAllProposals,
+  getAllTokenOwnerRecords,
+  getRealms,
+  ProgramAccount,
+  Proposal,
+  Realm,
+} from '@solana/spl-governance';
+import {
+  TwitterNotification,
+  TwitterNotificationsSink,
+} from './twitter-notifications-sink';
 
 import {
   Data,
@@ -15,12 +30,9 @@ import {
 } from '@dialectlabs/monitor';
 import { Duration } from 'luxon';
 
-const mainnetPK = new PublicKey(
-  'GovER5Lthms3bLBqWub97yVrMmEogzX7xNjdXpPPCVZw',
-);
-const PROVIDER_URL =
-  'https://solana-api.syndica.io/access-token/6sW38nSZ1Qm4WVRN4Vnbjb9EF2QudlpGZBToMtPyqoXqkIenDwJ5FVK1HdWSqqah/rpc';
-const connection = new Connection(PROVIDER_URL);
+const mainnetPK = new PublicKey('GovER5Lthms3bLBqWub97yVrMmEogzX7xNjdXpPPCVZw');
+
+const connection = new Connection(process.env.RPC_URL!);
 
 interface ProposalsChanged {
   added: ProgramAccount<Proposal>[];
@@ -58,19 +70,19 @@ export class MonitoringService implements OnModuleInit, OnModuleDestroy {
   private readonly notificationSink: NotificationSink<TwitterNotification> =
     new TwitterNotificationsSink();
 
-  constructor(
-    private readonly dialectConnection: DialectConnection, // private readonly squadsService: SquadsService,
-  ) {}
+  private readonly logger = new Logger(MonitoringService.name);
+
+  constructor(private readonly dialectConnection: DialectConnection) {}
 
   async onModuleInit() {
-    this.initMemberAddedOrWithdrawnFromSquad();
+    this.initMonitor();
   }
 
   async onModuleDestroy() {
     await Monitors.shutdown();
   }
 
-  private initMemberAddedOrWithdrawnFromSquad() {
+  private initMonitor() {
     const monitor = Monitors.builder({
       monitorKeypair: this.dialectConnection.getKeypair(),
       dialectProgram: this.dialectConnection.getProgram(),
@@ -78,7 +90,7 @@ export class MonitoringService implements OnModuleInit, OnModuleDestroy {
       .defineDataSource<RealmData>()
       .poll(
         async (subscribers) => this.getRealmsData(subscribers),
-        Duration.fromObject({ seconds: 10 }),
+        Duration.fromObject({ seconds: 60 }),
       )
       .transform<RealmWithProposals, ProposalsChanged>({
         keys: ['realm'],
@@ -87,9 +99,12 @@ export class MonitoringService implements OnModuleInit, OnModuleDestroy {
             (upstream) =>
               upstream
                 .pipe(
-                  Operators.Window.fixedSizeSliding<RealmWithProposals, RealmData>(2),
+                  Operators.Window.fixedSizeSliding<
+                    RealmWithProposals,
+                    RealmData
+                  >(2),
                   Operators.Transform.filter((it) => {
-                    return it.length == 2
+                    return it.length == 2;
                   }),
                 )
                 .pipe(
@@ -97,25 +112,22 @@ export class MonitoringService implements OnModuleInit, OnModuleDestroy {
                     const proposalsAdded = d2.value.proposals.filter(
                       ({ pubkey: proposal2 }) =>
                         !d1.value.proposals.find(({ pubkey: proposal1 }) =>
-                        proposal2.equals(proposal1),
+                          proposal2.equals(proposal1),
                         ),
                     );
-                    const proposalsChanged: Data<
-                      ProposalsChanged,
-                      RealmData
-                    > = {
-                      value: {
-                        added: proposalsAdded,
-                      },
-                      context: d2.context,
-                    };
+                    const proposalsChanged: Data<ProposalsChanged, RealmData> =
+                      {
+                        value: {
+                          added: proposalsAdded,
+                        },
+                        context: d2.context,
+                      };
                     return proposalsChanged;
                   }),
                 )
                 .pipe(
                   Operators.Transform.filter(
-                    ({ value: { added } }) =>
-                      added.length > 0,
+                    ({ value: { added } }) => added.length > 0,
                   ),
                 ),
           ),
@@ -126,7 +138,7 @@ export class MonitoringService implements OnModuleInit, OnModuleDestroy {
         ({ value, context }) => {
           const realmName: string = context.origin.realm.realm.account.name;
           const message: string = this.constructMessage(realmName, value);
-          console.log(`Sending dialect message: ${message}`);
+          this.logger.log(`Sending dialect message: ${message}`);
           return {
             message: message,
           };
@@ -141,42 +153,53 @@ export class MonitoringService implements OnModuleInit, OnModuleDestroy {
         ) => !!realmMembersSubscribedToNotifications[recipient.toBase58()],
       )
       .custom<TwitterNotification>(({ value, context }) => {
-          const realmName: string = context.origin.realm.realm.account.name;
-
-          const message = this.constructMessage(realmName, value);
-
-          console.log(`Sending tweet for ${realmName} : ${message}`);
-
-          return {
-            message
-          };
-        },
-        this.notificationSink,
-      )
+        const realmName: string = context.origin.realm.realm.account.name;
+        const message = this.constructMessage(realmName, value);
+        this.logger.log(`Sending tweet for ${realmName} : ${message}`);
+        return {
+          message,
+        };
+      }, this.notificationSink)
       .and()
       .dispatch('broadcast')
       .build();
     monitor.start();
   }
 
-  private constructMessage(realmName: string, proposalsChanged: ProposalsChanged): string {
+  private constructMessage(
+    realmName: string,
+    proposalsChanged: ProposalsChanged,
+  ): string {
     return [
       ...proposalsChanged.added.map(
         (it) =>
-          `📜 New proposal: ${it.account.name} added to ${realmName} by ${it.owner}.${it.account.descriptionLink ? ` Link to: ${it.account.descriptionLink}` : ''}`,
+          `📜 New proposal: ${it.account.name} added to ${realmName} by ${
+            it.owner
+          }.${
+            it.account.descriptionLink
+              ? ` Link to: ${it.account.descriptionLink}`
+              : ''
+          }`,
       ),
     ].join('\n');
   }
 
-  private async getRealmsData(subscribers: ResourceId[]): Promise<SourceData<RealmData>[]> {
-    console.log("these are the subscribers: ", subscribers);
+  private async getRealmsData(
+    subscribers: ResourceId[],
+  ): Promise<SourceData<RealmData>[]> {
+    this.logger.log(`Getting reals data for ${subscribers.length} subscribers`);
     const realms = await getRealms(connection, mainnetPK);
-
-    const realmsPromises = realms.map(async realm => {
+    const realmsPromises = realms.map(async (realm) => {
       return {
         realm: realm,
-        proposals: (await getAllProposals(connection, mainnetPK, realm.pubkey)).flat(),
-        tokenOwnerRecords: await getAllTokenOwnerRecords(connection, mainnetPK, realm.pubkey),
+        proposals: (
+          await getAllProposals(connection, mainnetPK, realm.pubkey)
+        ).flat(),
+        tokenOwnerRecords: await getAllTokenOwnerRecords(
+          connection,
+          mainnetPK,
+          realm.pubkey,
+        ),
       };
     });
 
@@ -184,20 +207,27 @@ export class MonitoringService implements OnModuleInit, OnModuleDestroy {
       subscribers.map((it) => [it.toBase58(), it]),
     );
 
-    console.log(`Getting all realms data for ${realmsPromises.length} realms`);
+    this.logger.log(
+      `Getting all realms data for ${realmsPromises.length} realms`,
+    );
     const realmsData = await Promise.all(realmsPromises);
-    console.log(`Completed getting all realms data for ${realmsData.length} realms`);
+    this.logger.log(
+      `Completed getting all realms data for ${realmsData.length} realms`,
+    );
     return realmsData.map((it) => {
+      const realmMembersSubscribedToNotifications: Record<string, PublicKey> =
+        Object.fromEntries(
+          it.tokenOwnerRecords
+            .map((it) => it.account.governingTokenOwner)
+            .filter((it) => subscribersSet[it.toBase58()])
+            .map((it) => [it.toBase58(), it]),
+        );
       const sourceData: SourceData<RealmData> = {
         resourceId: it.realm.pubkey,
         data: {
           realm: it,
-          realmMembersSubscribedToNotifications: Object.fromEntries(
-            it.tokenOwnerRecords
-              .map((it) => it.account.governingTokenOwner)
-              .filter((it) => subscribersSet[it.toBase58()])
-              .map((it) => [it.toBase58(), it]),
-          ),
+          realmMembersSubscribedToNotifications:
+            realmMembersSubscribedToNotifications,
         },
       };
       return sourceData;

@@ -26,7 +26,7 @@ const DIALECT_PROGRAM_ADDRESS = programs[NETWORK_NAME].programAddress;
 // const DIALECT_PROGRAM_ADDRESS = 'BTHDR8UjttR3mX3PwT8MuEKDDzDYwqENYgPHH7QjaJ3y';
 const createClients = async (n: number): Promise<void> => {
   console.log(
-    `Creating ${n} squads clients with target ${MONITORING_SERVICE_PUBLIC_KEY}`,
+    `Creating ${n} realms clients with target ${MONITORING_SERVICE_PUBLIC_KEY}`,
   );
 
   const clients = Array(n)

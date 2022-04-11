@@ -1,5 +1,5 @@
 {
-  "name": "@dialectlabs/squads-monitoring-service",
+  "name": "@dialectlabs/realms-monitoring-service",
   "version": "0.1.0",
   "author": "dialectlabs",
   "private": false,
@@ -95,7 +95,4 @@
     "coverageDirectory": "../coverage",
     "testEnvironment": "node"
   },
-  "prisma": {
-    "seed": "ts-node prisma/seed.ts"
-  }
 }
