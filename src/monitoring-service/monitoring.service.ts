@@ -184,7 +184,9 @@ export class MonitoringService implements OnModuleInit, OnModuleDestroy {
       subscribers.map((it) => [it.toBase58(), it]),
     );
 
+    console.log(`Getting all realms data for ${realmsPromises.length} realms`);
     const realmsData = await Promise.all(realmsPromises);
+    console.log(`Completed getting all realms data for ${realmsData.length} realms`);
     return realmsData.map((it) => {
       const sourceData: SourceData<RealmData> = {
         resourceId: it.realm.pubkey,

@@ -1,4 +1,4 @@
-import { getRealms, getAllProposals } from '@solana/spl-governance';
+import { getRealms, getAllProposals, getAllTokenOwnerRecords } from '@solana/spl-governance';
 import { Connection, PublicKey } from '@solana/web3.js';
 import { TwitterApi } from 'twitter-api-v2';
 
@@ -12,6 +12,13 @@ async function run() {
 
   console.log(realms.length);
 
+  // const programAccounts = await connection.getProgramAccounts(
+  //   programId,
+  // );
+
+  // console.log(programAccounts);
+  // console.log(programAccounts[0].account.owner.toBase58());
+
   // Fetch all the realms data
   // If a realm has a new proposal -> votingProposalCount if it increases
   // Get the new proposal(s) and tweet about it
@@ -20,7 +27,15 @@ async function run() {
   //   return getAllProposals(connection, programId, realm.pubkey);
   // });
 
-  // await Promise.all(promises);
+  // const realmsPromises = realms.map(async realm => {
+  //   return {
+  //     realm: realm,
+  //     proposals: (await getAllProposals(connection, programId, realm.pubkey)).flat(),
+  //     tokenOwnerRecords: await getAllTokenOwnerRecords(connection, programId, realm.pubkey),
+  //   };
+  // });
+
+  // await Promise.all(realmsPromises);
   for (const realm of realms) {
     if (realm.account.votingProposalCount > 0) {
       console.log("name: ", realm.account.name);
@@ -32,7 +47,14 @@ async function run() {
 
       console.log("proposals", proposals);
 
-      // await getAllTokenOwnerRecords(connection, programId, realm.pubkey);
+      const tokenOwnerRecords = await getAllTokenOwnerRecords(connection, programId, realm.pubkey);
+
+      console.log("token owner records length: ", tokenOwnerRecords.length);
+      console.log("token owner records: ", tokenOwnerRecords);
+
+      for (const tokenHolder of tokenOwnerRecords) {
+        console.log("token holder address: ", tokenHolder.account.governingTokenOwner.toBase58());
+      }
 
       break;
     }
