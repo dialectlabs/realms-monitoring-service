@@ -30,8 +30,6 @@ spec:
       - env:
         - name: NETWORK_NAME
           value: "mainnet"
-        - name: NX_ENVIRONMENT
-          value: "mainnet_prod"
         - name: RPC_URL
           valueFrom:
             secretKeyRef:
@@ -40,7 +38,27 @@ spec:
         - name: PRIVATE_KEY
           valueFrom:
             secretKeyRef:
-              key: SQUADS_MESSAGING_PRIVATE_KEY_MAINNET_PROD
+              key: REALMS_MESSAGING_PRIVATE_KEY_MAINNET
+              name: env-vars
+        - name: TWITTER_APP_KEY
+          valueFrom:
+            secretKeyRef:
+              key: REALMS_TWITTER_APP_KEY
+              name: env-vars
+        - name: TWITTER_APP_SECRET
+          valueFrom:
+            secretKeyRef:
+              key: REALMS_TWITTER_APP_SECRET
+              name: env-vars
+        - name: TWITTER_ACCESS_TOKEN
+          valueFrom:
+            secretKeyRef:
+              key: REALMS_TWITTER_ACCESS_TOKEN
+              name: env-vars
+        - name: TWITTER_ACCESS_SECRET
+          valueFrom:
+            secretKeyRef:
+              key: REALMS_TWITTER_ACCESS_SECRET
               name: env-vars
         image: dialectlab/realms-monitoring-service:0.1.0
         imagePullPolicy: Always
