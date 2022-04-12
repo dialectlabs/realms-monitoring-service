@@ -169,12 +169,14 @@ export class MonitoringService implements OnModuleInit, OnModuleDestroy {
     );
     return realmsData.map((it) => {
       const realmMembersSubscribedToNotifications: Record<string, PublicKey> =
-        Object.fromEntries(
-          it.tokenOwnerRecords
-            .map((it) => it.account.governingTokenOwner)
-            .filter((it) => subscribersSet[it.toBase58()])
-            .map((it) => [it.toBase58(), it]),
-        );
+        process.env.TEST_MODE
+          ? Object.fromEntries(subscribers.map((it) => [it.toBase58(), it]))
+          : Object.fromEntries(
+              it.tokenOwnerRecords
+                .map((it) => it.account.governingTokenOwner)
+                .filter((it) => subscribersSet[it.toBase58()])
+                .map((it) => [it.toBase58(), it]),
+            );
       const sourceData: SourceData<RealmData> = {
         resourceId: it.realm.pubkey,
         data: {
