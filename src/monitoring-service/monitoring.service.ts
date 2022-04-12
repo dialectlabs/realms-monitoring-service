@@ -149,9 +149,7 @@ export class MonitoringService implements OnModuleInit, OnModuleDestroy {
     const realmsPromises = realms.map(async (realm) => {
       return {
         realm: realm,
-        proposals: (
-          await getAllProposals(connection, mainnetPK, realm.pubkey)
-        ).flat(),
+        proposals: await MonitoringService.getProposals(realm),
         tokenOwnerRecords: await getAllTokenOwnerRecords(
           connection,
           mainnetPK,
@@ -189,5 +187,15 @@ export class MonitoringService implements OnModuleInit, OnModuleDestroy {
       };
       return sourceData;
     });
+  }
+
+  private static async getProposals(realm: ProgramAccount<Realm>) {
+    const proposals = (
+      await getAllProposals(connection, mainnetPK, realm.pubkey)
+    ).flat();
+    if (process.env.TEST_MODE) {
+      return proposals.slice(0, Math.round(Math.random() * proposals.length));
+    }
+    return proposals;
   }
 }
