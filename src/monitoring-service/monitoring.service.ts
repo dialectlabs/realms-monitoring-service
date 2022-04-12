@@ -30,11 +30,9 @@ import { Duration } from 'luxon';
 
 const mainnetPK = new PublicKey('GovER5Lthms3bLBqWub97yVrMmEogzX7xNjdXpPPCVZw');
 
-const connection = new Connection(process.env.RPC_URL!);
-
-interface ProposalsChanged {
-  added: ProgramAccount<Proposal>[];
-}
+const connection = new Connection(
+  process.env.REALMS_PRC_URL ?? process.env.RPC_URL!,
+);
 
 interface RealmData {
   realm: ProgramAccount<Realm>;
@@ -194,7 +192,10 @@ export class MonitoringService implements OnModuleInit, OnModuleDestroy {
       await getAllProposals(connection, mainnetPK, realm.pubkey)
     ).flat();
     if (process.env.TEST_MODE) {
-      return proposals.slice(0, Math.round(Math.random() * proposals.length));
+      return proposals.slice(
+        0,
+        Math.round(Math.random() * Math.max(0, proposals.length - 3)),
+      );
     }
     return proposals;
   }
