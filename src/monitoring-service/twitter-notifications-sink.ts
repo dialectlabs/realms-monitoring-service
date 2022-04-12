@@ -12,12 +12,14 @@ export class TwitterNotificationsSink
   implements NotificationSink<TwitterNotification>
 {
   private readonly logger = new Logger(TwitterNotificationsSink.name);
-  private twitterClient = new TwitterApi({
-    appKey: process.env.TWITTER_APP_KEY!,
-    appSecret: process.env.TWITTER_APP_SECRET!,
-    accessToken: process.env.TWITTER_ACCESS_TOKEN,
-    accessSecret: process.env.TWITTER_ACCESS_SECRET,
-  });
+  private twitterClient =
+    !process.env.TEST_MODE &&
+    new TwitterApi({
+      appKey: process.env.TWITTER_APP_KEY!,
+      appSecret: process.env.TWITTER_APP_SECRET!,
+      accessToken: process.env.TWITTER_ACCESS_TOKEN,
+      accessSecret: process.env.TWITTER_ACCESS_SECRET,
+    });
 
   async push({ message }: TwitterNotification): Promise<void> {
     let shortenedText = message.replace(/\s+/g, ' ').slice(0, maxMsgLen);
@@ -27,11 +29,12 @@ export class TwitterNotificationsSink
         ? shortenedText
         : shortenedText.slice(0, lastIndexOfSpace);
     this.logger.log(shortenedText);
-    await this.twitterClient.v2
-      .tweet({
-        text: shortenedText,
-      })
-      .catch(() => this.logger.error(it));
+    this.twitterClient &&
+      (await this.twitterClient.v2
+        .tweet({
+          text: shortenedText,
+        })
+        .catch(() => this.logger.error(it)));
     return;
   }
 }
