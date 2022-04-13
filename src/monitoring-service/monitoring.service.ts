@@ -131,7 +131,13 @@ export class MonitoringService implements OnModuleInit, OnModuleDestroy {
     return [
       ...proposalsAdded.map(
         (it) =>
-          `📜 New proposal for ${realmName}: https://realms.today/dao/${realmId}/proposal/${it.pubkey.toBase58()}`,
+          `📜 New proposal for ${realmName}: https://realms.today/dao/${realmId}/proposal/${it.pubkey.toBase58()} -
+          ${
+            it.account.name
+          } added by ${
+            it.owner
+          }
+          `,
       ),
     ].join('\n');
   }
