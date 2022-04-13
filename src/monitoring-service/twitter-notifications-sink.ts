@@ -23,11 +23,12 @@ export class TwitterNotificationsSink
 
   async push({ message }: TwitterNotification): Promise<void> {
     let shortenedText = message.replace(/\s+/g, ' ').slice(0, maxMsgLen);
-    const lastIndexOfSpace = shortenedText.lastIndexOf(' ');
-    shortenedText =
-      lastIndexOfSpace === -1
-        ? shortenedText
-        : shortenedText.slice(0, lastIndexOfSpace);
+    // TODO: replace links with 23 characters (https://help.twitter.com/en/using-twitter/how-to-tweet-a-link)
+    // const lastIndexOfSpace = shortenedText.lastIndexOf(' ');
+    // shortenedText =
+    //   lastIndexOfSpace === -1
+    //     ? shortenedText
+    //     : shortenedText.slice(0, lastIndexOfSpace);
     this.logger.log(shortenedText);
     this.twitterClient &&
       (await this.twitterClient.v2

@@ -92,7 +92,8 @@ export class MonitoringService implements OnModuleInit, OnModuleDestroy {
       .dialectThread(
         ({ value, context }) => {
           const realmName: string = context.origin.realm.account.name;
-          const message: string = this.constructMessage(realmName, value);
+          const realmId: string = context.origin.realm.pubkey.toBase58();
+          const message: string = this.constructMessage(realmName, realmId, value);
           this.logger.log(`Sending dialect message: ${message}`);
           return {
             message: message,
@@ -109,7 +110,8 @@ export class MonitoringService implements OnModuleInit, OnModuleDestroy {
       )
       .custom<TwitterNotification>(({ value, context }) => {
         const realmName: string = context.origin.realm.account.name;
-        const message = this.constructMessage(realmName, value);
+        const realmId: string = context.origin.realm.pubkey.toBase58();
+        const message = this.constructMessage(realmName, realmId, value);
         this.logger.log(`Sending tweet for ${realmName} : ${message}`);
         return {
           message,
@@ -123,18 +125,13 @@ export class MonitoringService implements OnModuleInit, OnModuleDestroy {
 
   private constructMessage(
     realmName: string,
+    realmId: string,
     proposalsAdded: ProgramAccount<Proposal>[],
   ): string {
     return [
       ...proposalsAdded.map(
         (it) =>
-          `📜 New proposal: ${it.account.name} added to ${realmName} by ${
-            it.owner
-          }.${
-            it.account.descriptionLink
-              ? ` Link to: ${it.account.descriptionLink}`
-              : ''
-          }`,
+          `📜 New proposal for ${realmName}: https://realms.today/dao/${realmId}/proposal/${it.pubkey.toBase58()}`,
       ),
     ].join('\n');
   }
