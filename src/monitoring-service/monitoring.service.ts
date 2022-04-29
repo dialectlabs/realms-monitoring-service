@@ -66,6 +66,19 @@ export class MonitoringService implements OnModuleInit, OnModuleDestroy {
 
   constructor(private readonly dialectConnection: DialectConnection) {}
 
+  private static async getProposals(realm: ProgramAccount<Realm>) {
+    const proposals = (
+      await getAllProposals(connection, mainnetPK, realm.pubkey)
+    ).flat();
+    if (process.env.TEST_MODE) {
+      return proposals.slice(
+        0,
+        Math.round(Math.random() * Math.max(0, proposals.length - 3)),
+      );
+    }
+    return proposals;
+  }
+
   async onModuleInit() {
     this.initMonitor();
   }
@@ -93,7 +106,11 @@ export class MonitoringService implements OnModuleInit, OnModuleDestroy {
         ({ value, context }) => {
           const realmName: string = context.origin.realm.account.name;
           const realmId: string = context.origin.realm.pubkey.toBase58();
-          const message: string = this.constructMessage(realmName, realmId, value);
+          const message: string = this.constructMessage(
+            realmName,
+            realmId,
+            value,
+          );
           this.logger.log(`Sending dialect message: ${message}`);
           return {
             message: message,
@@ -132,11 +149,7 @@ export class MonitoringService implements OnModuleInit, OnModuleDestroy {
       ...proposalsAdded.map(
         (it) =>
           `📜 New proposal for ${realmName}: https://realms.today/dao/${realmId}/proposal/${it.pubkey.toBase58()} -
-          ${
-            it.account.name
-          } added by ${
-            it.owner
-          }
+          ${it.account.name} added by ${it.owner}
           `,
       ),
     ].join('\n');
@@ -190,18 +203,5 @@ export class MonitoringService implements OnModuleInit, OnModuleDestroy {
       };
       return sourceData;
     });
-  }
-
-  private static async getProposals(realm: ProgramAccount<Realm>) {
-    const proposals = (
-      await getAllProposals(connection, mainnetPK, realm.pubkey)
-    ).flat();
-    if (process.env.TEST_MODE) {
-      return proposals.slice(
-        0,
-        Math.round(Math.random() * Math.max(0, proposals.length - 3)),
-      );
-    }
-    return proposals;
   }
 }
