@@ -10,6 +10,7 @@ import {
   getAllProposals,
   getAllTokenOwnerRecords,
   getRealms,
+  getTokenOwnerRecord,
   ProgramAccount,
   Proposal,
   Realm,
@@ -40,6 +41,10 @@ interface RealmData {
   realmMembersSubscribedToNotifications: Record<string, PublicKey>;
 }
 
+type TokenOwnerRecordToGoverningTokenOwnerType = {
+  [key: string]: string;
+};
+
 /*
 Realms use case:
 When a proposal is added to a realm -
@@ -63,6 +68,8 @@ export class MonitoringService implements OnModuleInit, OnModuleDestroy {
     new TwitterNotificationsSink();
 
   private readonly logger = new Logger(MonitoringService.name);
+  private tokenOwnerRecordToGoverningTokenOwner: TokenOwnerRecordToGoverningTokenOwnerType =
+    {};
 
   constructor(private readonly dialectConnection: DialectConnection) {}
 
@@ -148,8 +155,18 @@ export class MonitoringService implements OnModuleInit, OnModuleDestroy {
     return [
       ...proposalsAdded.map(
         (it) =>
-          `📜 New proposal for ${realmName}: https://realms.today/dao/${realmId}/proposal/${it.pubkey.toBase58()} -
-          ${it.account.name} added by ${it.account.tokenOwnerRecord.toBase58()}
+          `📜 New proposal for ${realmName}: https://realms.today/dao/${realmId}/proposal/${it.pubkey.toBase58()}
+          ${it.account.name}${
+            this.tokenOwnerRecordToGoverningTokenOwner[
+              it.account.tokenOwnerRecord.toBase58()
+            ]
+              ? ` added by ${
+                  this.tokenOwnerRecordToGoverningTokenOwner[
+                    it.account.tokenOwnerRecord.toBase58()
+                  ]
+                }`
+              : ''
+          }
           `,
       ),
     ].join('\n');
@@ -158,9 +175,11 @@ export class MonitoringService implements OnModuleInit, OnModuleDestroy {
   private async getRealmsData(
     subscribers: ResourceId[],
   ): Promise<SourceData<RealmData>[]> {
-    this.logger.log(`Getting reals data for ${subscribers.length} subscribers`);
+    this.logger.log(
+      `Getting realms data for ${subscribers.length} subscribers`,
+    );
     const realms = await getRealms(connection, mainnetPK);
-    const realmsPromises = realms.map(async (realm) => {
+    let realmsPromises = realms.map(async (realm) => {
       return {
         realm: realm,
         proposals: await MonitoringService.getProposals(realm),
@@ -171,6 +190,10 @@ export class MonitoringService implements OnModuleInit, OnModuleDestroy {
         ),
       };
     });
+
+    if (process.env.TEST_MODE) {
+      realmsPromises = realmsPromises.slice(0, 20);
+    }
 
     const subscribersSet = Object.fromEntries(
       subscribers.map((it) => [it.toBase58(), it]),
@@ -183,6 +206,44 @@ export class MonitoringService implements OnModuleInit, OnModuleDestroy {
     this.logger.log(
       `Completed getting all realms data for ${realmsData.length} realms`,
     );
+
+    const allProposals: ProgramAccount<Proposal>[] = realmsData
+      .map((it) => {
+        return it.proposals;
+      })
+      .flat();
+
+    this.logger.log(
+      `Getting all proposal owners for ${allProposals.length} proposals`,
+    );
+
+    const proposalsWithOwnerAddressPromises = allProposals.map(
+      async (proposal) => {
+        return {
+          ...proposal,
+          tokenOwnerRecord: await getTokenOwnerRecord(
+            connection,
+            proposal.account.tokenOwnerRecord,
+          ),
+        };
+      },
+    );
+
+    const proposalsWithOwnerAddress = await Promise.all(
+      proposalsWithOwnerAddressPromises,
+    );
+
+    this.tokenOwnerRecordToGoverningTokenOwner = Object.fromEntries(
+      proposalsWithOwnerAddress.map((it) => [
+        it.account.tokenOwnerRecord.toBase58(),
+        it.tokenOwnerRecord.account.governingTokenOwner.toBase58(),
+      ]),
+    );
+
+    this.logger.log(
+      `Completed getting all proposal owners for ${allProposals.length} proposals`,
+    );
+
     return realmsData.map((it) => {
       const realmMembersSubscribedToNotifications: Record<string, PublicKey> =
         process.env.TEST_MODE
