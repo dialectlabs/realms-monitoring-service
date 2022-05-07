@@ -154,19 +154,24 @@ export class MonitoringService implements OnModuleInit, OnModuleDestroy {
   ): string {
     return [
       ...proposalsAdded.map(
-        (it) =>
-          `📜 New proposal for ${realmName}: https://realms.today/dao/${realmId}/proposal/${it.pubkey.toBase58()}
+        (it) => {
+          let walletAddress = this.tokenOwnerRecordToGoverningTokenOwner[
+            it.account.tokenOwnerRecord.toBase58()
+          ];
+
+          if (walletAddress) {
+            walletAddress = `${walletAddress.substring(0, 5)}...${walletAddress.substring(walletAddress.length - 5)}`;
+          }
+
+          return `📜 New proposal for ${realmName}: https://realms.today/dao/${realmId}/proposal/${it.pubkey.toBase58()}
 ${it.account.name}${
-  this.tokenOwnerRecordToGoverningTokenOwner[
-    it.account.tokenOwnerRecord.toBase58()
-  ]
+  walletAddress
     ? ` added by ${
-        this.tokenOwnerRecordToGoverningTokenOwner[
-          it.account.tokenOwnerRecord.toBase58()
-        ]
+        walletAddress
       }`
     : ''
-}`,
+}`;
+        },
       ),
     ].join('\n');
   }
