@@ -9,6 +9,7 @@ import { DialectConnection } from './dialect-connection';
 import {
   getAllProposals,
   getAllTokenOwnerRecords,
+  getRealm,
   getRealms,
   getTokenOwnerRecord,
   ProgramAccount,
@@ -98,6 +99,21 @@ export class MonitoringService implements OnModuleInit, OnModuleDestroy {
     const monitor = Monitors.builder({
       monitorKeypair: this.dialectConnection.getKeypair(),
       dialectProgram: this.dialectConnection.getProgram(),
+      sinks: {
+        sms: {
+          twilioUsername: process.env.TWILIO_ACCOUNT_SID!,
+          twilioPassword: process.env.TWILIO_AUTH_TOKEN!,
+          senderSmsNumber: process.env.TWILIO_SMS_SENDER!,
+        },
+        email: {
+          apiToken: process.env.SENDGRID_KEY!,
+          senderEmail: process.env.SENDGRID_EMAIL!,
+        },
+        telegram: {
+          telegramBotToken: process.env.TELEGRAM_TOKEN!,
+        },
+      },
+      web2SubscriberRepositoryUrl: process.env.WEB2_SUBSCRIBER_SERVICE_BASE_URL,
     })
       .defineDataSource<RealmData>()
       .poll(
@@ -132,6 +148,99 @@ export class MonitoringService implements OnModuleInit, OnModuleDestroy {
           recipient,
         ) => !!realmMembersSubscribedToNotifications[recipient.toBase58()],
       )
+      .dialectThread(
+        ({ value, context }) => {
+          const realmName: string = context.origin.realm.account.name;
+          const realmId: string = context.origin.realm.pubkey.toBase58();
+          const message: string = this.constructMessage(
+            realmName,
+            realmId,
+            value,
+          );
+          this.logger.log(`Sending dialect message: ${message}`);
+          return {
+            message: message,
+          };
+        },
+        (
+          {
+            context: {
+              origin: { realmMembersSubscribedToNotifications },
+            },
+          },
+          recipient,
+        ) => !!realmMembersSubscribedToNotifications[recipient.toBase58()],
+      )
+      .telegram(
+        ({ value, context }) => {
+          const realmName: string = context.origin.realm.account.name;
+          const realmId: string = context.origin.realm.pubkey.toBase58();
+          const message: string = this.constructMessage(
+            realmName,
+            realmId,
+            value,
+          );
+          this.logger.log(`Sending telegram message: ${message}`);
+          return {
+            body: message,
+          };
+        },
+        (
+          {
+            context: {
+              origin: { realmMembersSubscribedToNotifications },
+            },
+          },
+          recipient,
+        ) => !!realmMembersSubscribedToNotifications[recipient.toBase58()],
+      )
+      .sms(
+        ({ value, context }) => {
+          const realmName: string = context.origin.realm.account.name;
+          const realmId: string = context.origin.realm.pubkey.toBase58();
+          const message: string = this.constructMessage(
+            realmName,
+            realmId,
+            value,
+          );
+          this.logger.log(`Sending telegram message: ${message}`);
+          return {
+            body: message,
+          };
+        },
+        (
+          {
+            context: {
+              origin: { realmMembersSubscribedToNotifications },
+            },
+          },
+          recipient,
+        ) => !!realmMembersSubscribedToNotifications[recipient.toBase58()],
+      )
+      .email(
+        ({ value, context }) => {
+          const realmName: string = context.origin.realm.account.name;
+          const realmId: string = context.origin.realm.pubkey.toBase58();
+          const message: string = this.constructMessage(
+            realmName,
+            realmId,
+            value,
+          );
+          this.logger.log(`Sending telegram message: ${message}`);
+          return {
+            subject: `📜 New proposal for ${realmName}`,
+            text: message,
+          };
+        },
+        (
+          {
+            context: {
+              origin: { realmMembersSubscribedToNotifications },
+            },
+          },
+          recipient,
+        ) => !!realmMembersSubscribedToNotifications[recipient.toBase58()],
+      )
       .custom<TwitterNotification>(({ value, context }) => {
         const realmName: string = context.origin.realm.account.name;
         const realmId: string = context.origin.realm.pubkey.toBase58();
@@ -153,26 +262,22 @@ export class MonitoringService implements OnModuleInit, OnModuleDestroy {
     proposalsAdded: ProgramAccount<Proposal>[],
   ): string {
     return [
-      ...proposalsAdded.map(
-        (it) => {
-          let walletAddress = this.tokenOwnerRecordToGoverningTokenOwner[
+      ...proposalsAdded.map((it) => {
+        let walletAddress =
+          this.tokenOwnerRecordToGoverningTokenOwner[
             it.account.tokenOwnerRecord.toBase58()
           ];
 
-          if (walletAddress) {
-            walletAddress = `${walletAddress.substring(0, 5)}...${walletAddress.substring(walletAddress.length - 5)}`;
-          }
+        if (walletAddress) {
+          walletAddress = `${walletAddress.substring(
+            0,
+            5,
+          )}...${walletAddress.substring(walletAddress.length - 5)}`;
+        }
 
-          return `📜 New proposal for ${realmName}: https://realms.today/dao/${realmId}/proposal/${it.pubkey.toBase58()}
-${it.account.name}${
-  walletAddress
-    ? ` added by ${
-        walletAddress
-      }`
-    : ''
-}`;
-        },
-      ),
+        return `📜 New proposal for ${realmName}: https://realms.today/dao/${realmId}/proposal/${it.pubkey.toBase58()}
+${it.account.name}${walletAddress ? ` added by ${walletAddress}` : ''}`;
+      }),
     ].join('\n');
   }
 
@@ -183,6 +288,16 @@ ${it.account.name}${
       `Getting realms data for ${subscribers.length} subscribers`,
     );
     const realms = await getRealms(connection, mainnetPK);
+    // const realms = [
+    //   await getRealm(
+    //     connection,
+    //     new PublicKey('6jkaVR3yeo6xWDhzbKEK98qnGbpBRjhz7aq8aTFZn3m'),
+    //   ),
+    //   await getRealm(
+    //     connection,
+    //     new PublicKey('48z2YEZYfH8FERht76kL9Ukg83JX3vaDDKC9kz6P6FWe'),
+    //   ),
+    // ];
     let realmsPromises = realms.map(async (realm) => {
       return {
         realm: realm,
@@ -258,6 +373,12 @@ ${it.account.name}${
                 .filter((it) => subscribersSet[it.toBase58()])
                 .map((it) => [it.toBase58(), it]),
             );
+      //
+      // console.log(
+      //   Object.values(realmMembersSubscribedToNotifications).map((it) =>
+      //     it.toBase58(),
+      //   ),
+      // );
       const sourceData: SourceData<RealmData> = {
         resourceId: it.realm.pubkey,
         data: {
