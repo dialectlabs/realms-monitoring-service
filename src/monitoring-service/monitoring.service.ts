@@ -148,29 +148,6 @@ export class MonitoringService implements OnModuleInit, OnModuleDestroy {
           recipient,
         ) => !!realmMembersSubscribedToNotifications[recipient.toBase58()],
       )
-      .dialectThread(
-        ({ value, context }) => {
-          const realmName: string = context.origin.realm.account.name;
-          const realmId: string = context.origin.realm.pubkey.toBase58();
-          const message: string = this.constructMessage(
-            realmName,
-            realmId,
-            value,
-          );
-          this.logger.log(`Sending dialect message: ${message}`);
-          return {
-            message: message,
-          };
-        },
-        (
-          {
-            context: {
-              origin: { realmMembersSubscribedToNotifications },
-            },
-          },
-          recipient,
-        ) => !!realmMembersSubscribedToNotifications[recipient.toBase58()],
-      )
       .telegram(
         ({ value, context }) => {
           const realmName: string = context.origin.realm.account.name;
