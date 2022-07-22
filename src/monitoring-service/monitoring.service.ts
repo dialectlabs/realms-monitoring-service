@@ -15,6 +15,7 @@ import {
   ProgramAccount,
   Proposal,
   Realm,
+  TokenOwnerRecord,
 } from '@solana/spl-governance';
 import {
   TwitterNotification,
@@ -29,8 +30,11 @@ import {
   SourceData,
 } from '@dialectlabs/monitor';
 import { Duration } from 'luxon';
+import * as Axios from 'axios';
 
-const mainnetPK = new PublicKey('GovER5Lthms3bLBqWub97yVrMmEogzX7xNjdXpPPCVZw');
+const axios = Axios.default;
+const splGovInstancesUrl = 'https://realms.today/api/splGovernancePrograms';
+const splGovMainInstancePk = new PublicKey('GovER5Lthms3bLBqWub97yVrMmEogzX7xNjdXpPPCVZw');
 
 const connection = new Connection(
   process.env.REALMS_PRC_URL ?? process.env.RPC_URL!,
@@ -74,9 +78,9 @@ export class MonitoringService implements OnModuleInit, OnModuleDestroy {
 
   constructor(private readonly dialectConnection: DialectConnection) {}
 
-  private static async getProposals(realm: ProgramAccount<Realm>) {
+  private static async getProposals(realm: ProgramAccount<Realm>, govInstancePk: PublicKey) {
     const proposals = (
-      await getAllProposals(connection, mainnetPK, realm.pubkey)
+      await getAllProposals(connection, govInstancePk, realm.pubkey)
     ).flat();
     if (process.env.TEST_MODE) {
       return proposals.slice(
@@ -264,41 +268,52 @@ ${it.account.name}${walletAddress ? ` added by ${walletAddress}` : ''}`;
     this.logger.log(
       `Getting realms data for ${subscribers.length} subscribers`,
     );
-    const realms = await getRealms(connection, mainnetPK);
-    // const realms = [
-    //   await getRealm(
-    //     connection,
-    //     new PublicKey('6jkaVR3yeo6xWDhzbKEK98qnGbpBRjhz7aq8aTFZn3m'),
-    //   ),
-    //   await getRealm(
-    //     connection,
-    //     new PublicKey('48z2YEZYfH8FERht76kL9Ukg83JX3vaDDKC9kz6P6FWe'),
-    //   ),
-    // ];
-    let realmsPromises = realms.map(async (realm) => {
-      return {
-        realm: realm,
-        proposals: await MonitoringService.getProposals(realm),
-        tokenOwnerRecords: await getAllTokenOwnerRecords(
-          connection,
-          mainnetPK,
-          realm.pubkey,
-        ),
-      };
-    });
+    let realmsData: { realm: ProgramAccount<Realm>; proposals: ProgramAccount<Proposal>[]; tokenOwnerRecords: ProgramAccount<TokenOwnerRecord>[]; }[] = [];
+
+    const splGovInstancesGet = await axios.get(splGovInstancesUrl);
+    const splGovInstancesRaw = splGovInstancesGet.data;
+    if (splGovInstancesGet.status === 200) {
+      this.logger.log('Getting realms data for spl-governance instances:');
+      this.logger.log(splGovInstancesRaw);
+      await Promise.all(
+        splGovInstancesRaw.map(async (gov: string) => {
+          const govInstancePk = new PublicKey(gov);
+          const govInstanceRealms = await getRealms(connection, govInstancePk);
+      
+          let addRealmsData = await Promise.all(govInstanceRealms.map(async (realm) => {
+              return {
+                  realm: realm,
+                  proposals: await MonitoringService.getProposals(realm, govInstancePk),
+                  tokenOwnerRecords: await getAllTokenOwnerRecords(connection, govInstancePk, realm.pubkey),
+              }
+          }));
+          
+          realmsData = realmsData.concat(addRealmsData);
+          return Promise.resolve();
+        }));
+    } else {
+      this.logger.warn(`Unable to fetch all splGovernance instances from ${splGovInstancesUrl}`);
+      this.logger.warn(splGovInstancesGet);
+      this.logger.warn(`Proceeding with proposals fetch, but will only be able to get realms for main instance: ${splGovMainInstancePk.toBase58()}`);
+      const govInstancePk = splGovMainInstancePk;
+      const govInstanceRealms = await getRealms(connection, govInstancePk);
+      let addRealmsData = await Promise.all(govInstanceRealms.map(async (realm) => {
+          return {
+              realm: realm,
+              proposals: await MonitoringService.getProposals(realm, govInstancePk),
+              tokenOwnerRecords: await getAllTokenOwnerRecords(connection, govInstancePk, realm.pubkey),
+          }
+      }));
+      realmsData = realmsData.concat(addRealmsData);
+    }
 
     if (process.env.TEST_MODE) {
-      realmsPromises = realmsPromises.slice(0, 20);
+      realmsData = realmsData.slice(0, 20);
     }
 
     const subscribersSet = Object.fromEntries(
       subscribers.map((it) => [it.toBase58(), it]),
     );
-
-    this.logger.log(
-      `Getting all realms data for ${realmsPromises.length} realms`,
-    );
-    const realmsData = await Promise.all(realmsPromises);
     this.logger.log(
       `Completed getting all realms data for ${realmsData.length} realms`,
     );
