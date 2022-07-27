@@ -275,18 +275,28 @@ ${it.account.name}${walletAddress ? ` added by ${walletAddress}` : ''}`;
     if (splGovInstancesGet.status === 200) {
       this.logger.log('Getting realms data for spl-governance instances:');
       this.logger.log(splGovInstancesRaw);
-      await Promise.all(
+      await Promise.allSettled(
         splGovInstancesRaw.map(async (gov: string) => {
           const govInstancePk = new PublicKey(gov);
           const govInstanceRealms = await getRealms(connection, govInstancePk);
-      
-          let addRealmsData = await Promise.all(govInstanceRealms.map(async (realm) => {
+    
+    
+          let addRealmsData: { realm: ProgramAccount<Realm>; proposals: ProgramAccount<Proposal>[]; tokenOwnerRecords: ProgramAccount<TokenOwnerRecord>[]; }[] = [];
+          await Promise.allSettled(govInstanceRealms.map(async (realm) => {
               return {
                   realm: realm,
                   proposals: await MonitoringService.getProposals(realm, govInstancePk),
                   tokenOwnerRecords: await getAllTokenOwnerRecords(connection, govInstancePk, realm.pubkey),
               }
-          }));
+          })).then((results) => {
+            results.forEach(result => {
+              if (result.status === 'fulfilled') {
+                addRealmsData.push(result.value);
+              } else {
+                this.logger.error(`Error loading ${govInstancePk.toBase58()} realm's data:`, result);
+              }
+            });
+          });
           
           realmsData = realmsData.concat(addRealmsData);
           return Promise.resolve();
