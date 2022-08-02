@@ -14,7 +14,7 @@ import * as Axios from 'axios';
 import { Logger } from '@nestjs/common';
 
 const axios = Axios.default;
-const splGovInstancesUrl = 'https://realms.today/api/splGovernancePrograms';
+const splGovInstancesUrl = 'https://app.realms.today/api/splGovernancePrograms';
 const splGovMainInstancePk = new PublicKey(
   'GovER5Lthms3bLBqWub97yVrMmEogzX7xNjdXpPPCVZw',
 );
