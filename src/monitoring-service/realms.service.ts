@@ -64,79 +64,47 @@ export class RealmsService {
       proposals: ProgramAccount<Proposal>[];
       tokenOwnerRecords: ProgramAccount<TokenOwnerRecord>[];
     }[] = [];
-
-    const splGovInstancesGet = await axios.get(splGovInstancesUrl);
-    const splGovInstancesRaw = splGovInstancesGet.data;
-    if (splGovInstancesGet.status === 200) {
-      this.logger.log('Getting realms data for spl-governance instances:');
-      this.logger.log(splGovInstancesRaw);
-      await Promise.allSettled(
-        splGovInstancesRaw.map(async (gov: string) => {
-          const govInstancePk = new PublicKey(gov);
-          const govInstanceRealms = await getRealms(connection, govInstancePk);
-
-          const addRealmsData: {
-            realm: ProgramAccount<Realm>;
-            proposals: ProgramAccount<Proposal>[];
-            tokenOwnerRecords: ProgramAccount<TokenOwnerRecord>[];
-          }[] = [];
-          await Promise.allSettled(
-            govInstanceRealms.map(async (realm) => {
-              return {
-                realm: realm,
-                proposals: await RealmsService.getProposals(
-                  realm,
-                  govInstancePk,
-                ),
-                tokenOwnerRecords: await getAllTokenOwnerRecords(
-                  connection,
-                  govInstancePk,
-                  realm.pubkey,
-                ),
-              };
-            }),
-          ).then((results) => {
-            results.forEach((result) => {
-              if (result.status === 'fulfilled') {
-                addRealmsData.push(result.value);
-              } else {
-                this.logger.error(
-                  `Error loading ${govInstancePk.toBase58()} realm's data:`,
-                  result,
-                );
-              }
-            });
+    const splGovInstancesRaw: string[] = await this.getGovInstancesSet();
+    this.logger.log('Getting realms data for spl-governance instances:');
+    this.logger.log(splGovInstancesRaw);
+    await Promise.allSettled(
+      splGovInstancesRaw.map(async (gov: string) => {
+        const govInstancePk = new PublicKey(gov);
+        const govInstanceRealms = await getRealms(connection, govInstancePk);
+        const addRealmsData: {
+          realm: ProgramAccount<Realm>;
+          proposals: ProgramAccount<Proposal>[];
+          tokenOwnerRecords: ProgramAccount<TokenOwnerRecord>[];
+        }[] = [];
+        await Promise.allSettled(
+          govInstanceRealms.map(async (realm) => {
+            return {
+              realm: realm,
+              proposals: await RealmsService.getProposals(realm, govInstancePk),
+              tokenOwnerRecords: await getAllTokenOwnerRecords(
+                connection,
+                govInstancePk,
+                realm.pubkey,
+              ),
+            };
+          }),
+        ).then((results) => {
+          results.forEach((result) => {
+            if (result.status === 'fulfilled') {
+              addRealmsData.push(result.value);
+            } else {
+              this.logger.error(
+                `Error loading ${govInstancePk.toBase58()} realm's data:`,
+                result,
+              );
+            }
           });
+        });
 
-          realmsData = realmsData.concat(addRealmsData);
-          return Promise.resolve();
-        }),
-      );
-    } else {
-      this.logger.warn(
-        `Unable to fetch all splGovernance instances from ${splGovInstancesUrl}`,
-      );
-      this.logger.warn(splGovInstancesGet);
-      this.logger.warn(
-        `Proceeding with proposals fetch, but will only be able to get realms for main instance: ${splGovMainInstancePk.toBase58()}`,
-      );
-      const govInstancePk = splGovMainInstancePk;
-      const govInstanceRealms = await getRealms(connection, govInstancePk);
-      const addRealmsData = await Promise.all(
-        govInstanceRealms.map(async (realm) => {
-          return {
-            realm: realm,
-            proposals: await RealmsService.getProposals(realm, govInstancePk),
-            tokenOwnerRecords: await getAllTokenOwnerRecords(
-              connection,
-              govInstancePk,
-              realm.pubkey,
-            ),
-          };
-        }),
-      );
-      realmsData = realmsData.concat(addRealmsData);
-    }
+        realmsData = realmsData.concat(addRealmsData);
+        return Promise.resolve();
+      }),
+    );
 
     if (process.env.TEST_MODE) {
       realmsData = realmsData.slice(0, 20);
@@ -197,12 +165,6 @@ export class RealmsService {
                 .filter((it) => subscribersSet[it.toBase58()])
                 .map((it) => [it.toBase58(), it]),
             );
-      //
-      // console.log(
-      //   Object.values(realmMembersSubscribedToNotifications).map((it) =>
-      //     it.toBase58(),
-      //   ),
-      // );
       const sourceData: SourceData<RealmData> = {
         resourceId: it.realm.pubkey,
         data: {
@@ -214,5 +176,19 @@ export class RealmsService {
       };
       return sourceData;
     });
+  }
+
+  private async getGovInstancesSet(): Promise<string[]> {
+    try {
+      const splGovInstancesGet = await axios.get<string[]>(splGovInstancesUrl);
+      const data = splGovInstancesGet.data;
+      const set = new Set([...data, splGovMainInstancePk.toBase58()]);
+      return [...set];
+    } catch (e) {
+      this.logger.error(
+        `Failed to get gov instances, reason ${JSON.stringify(e)} `,
+      );
+      return [splGovMainInstancePk.toBase58()];
+    }
   }
 }
