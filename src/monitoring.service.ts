@@ -1,92 +1,59 @@
-import {
-  Injectable,
-  Logger,
-  OnModuleDestroy,
-  OnModuleInit,
-} from '@nestjs/common';
-import { DialectConnection } from './dialect-connection';
-import { ProgramAccount, Proposal } from '@solana/spl-governance';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import {
   TwitterNotification,
   TwitterNotificationsSink,
 } from './twitter-notifications-sink';
 
-import { Monitors, NotificationSink, Pipelines } from '@dialectlabs/monitor';
-import { Duration } from 'luxon';
 import {
+  DialectSdkNotification,
+  Monitors,
+  NotificationSink,
+  Pipelines,
+} from '@dialectlabs/monitor';
+import { Duration } from 'luxon';
+
+import { DialectSdk } from './dialect-sdk';
+import {
+  ProposalWithMetadata,
   RealmData,
   RealmsService,
-  TokenOwnerRecordToGoverningTokenOwnerType,
 } from './realms.service';
-
-/*
-Realms use case:
-When a proposal is added to a realm -
-1. send a tweet out
-
----
-
-* global data fetch
-1. Fetch all realms
-2. Fetch all proposals
-
-* filter or detect diff
-3. Look for diffs in the proposals array
-4. When finding a proposal added or removed
-5. Send out tweet for new proposal
-*/
+import { ConsoleNotificationSink } from './console-notification-sink';
 
 @Injectable()
-export class MonitoringService implements OnModuleInit, OnModuleDestroy {
-  private readonly notificationSink: NotificationSink<TwitterNotification> =
+export class MonitoringService implements OnModuleInit {
+  private readonly twitterNotificationsSink: NotificationSink<TwitterNotification> =
     new TwitterNotificationsSink();
+
+  private readonly consoleNotificationSink: NotificationSink<DialectSdkNotification> =
+    new ConsoleNotificationSink<DialectSdkNotification>();
 
   private readonly logger = new Logger(MonitoringService.name);
 
   constructor(
-    private readonly dialectConnection: DialectConnection,
+    private readonly sdk: DialectSdk,
     private readonly realmsService: RealmsService,
   ) {}
 
-  async onModuleInit() {
-    this.initMonitor();
-  }
-
-  async onModuleDestroy() {
-    await Monitors.shutdown();
-  }
-
-  private initMonitor() {
+  onModuleInit() {
     const monitor = Monitors.builder({
-      monitorKeypair: this.dialectConnection.getKeypair(),
-      dialectProgram: this.dialectConnection.getProgram(),
-      sinks: {
-        sms: {
-          twilioUsername: process.env.TWILIO_ACCOUNT_SID!,
-          twilioPassword: process.env.TWILIO_AUTH_TOKEN!,
-          senderSmsNumber: process.env.TWILIO_SMS_SENDER!,
-        },
-        email: {
-          apiToken: process.env.SENDGRID_KEY!,
-          senderEmail: process.env.SENDGRID_EMAIL!,
-        },
-        telegram: {
-          telegramBotToken: process.env.TELEGRAM_TOKEN!,
-        },
-      },
-      web2SubscriberRepositoryUrl: process.env.WEB2_SUBSCRIBER_SERVICE_BASE_URL,
+      sdk: this.sdk,
     })
       .defineDataSource<RealmData>()
       .poll(
         async (subscribers) => this.realmsService.getRealmsData(subscribers),
-        Duration.fromObject({ seconds: 60 }),
+        Duration.fromObject({ seconds: 30 }),
       )
-      .transform<ProgramAccount<Proposal>[], ProgramAccount<Proposal>[]>({
+      .transform<ProposalWithMetadata[], ProposalWithMetadata[]>({
         keys: ['proposals'],
-        pipelines: [Pipelines.added((p1, p2) => p1.pubkey.equals(p2.pubkey))],
+        pipelines: [
+          Pipelines.added((p1, p2) =>
+            p1.proposal.pubkey.equals(p2.proposal.pubkey),
+          ),
+        ],
       })
       .notify()
-      .dialectThread(
+      .custom(
         ({ value, context }) => {
           const realmName: string = context.origin.realm.account.name;
           const realmId: string = context.origin.realm.pubkey.toBase58();
@@ -94,23 +61,16 @@ export class MonitoringService implements OnModuleInit, OnModuleDestroy {
             realmName,
             realmId,
             value,
-            context.origin.tokenOwnerRecordToGoverningTokenOwner,
           );
-          this.logger.log(`Sending dialect message: ${message}`);
           return {
-            message: message,
+            title: `📜 New proposal for ${realmName}`,
+            message,
           };
         },
-        (
-          {
-            context: {
-              origin: { realmMembersSubscribedToNotifications },
-            },
-          },
-          recipient,
-        ) => !!realmMembersSubscribedToNotifications[recipient.toBase58()],
+        this.consoleNotificationSink,
+        { dispatch: 'multicast', to: ({ origin }) => origin.subscribers },
       )
-      .telegram(
+      .dialectSdk(
         ({ value, context }) => {
           const realmName: string = context.origin.realm.account.name;
           const realmId: string = context.origin.realm.pubkey.toBase58();
@@ -118,87 +78,30 @@ export class MonitoringService implements OnModuleInit, OnModuleDestroy {
             realmName,
             realmId,
             value,
-            context.origin.tokenOwnerRecordToGoverningTokenOwner,
           );
-          this.logger.log(`Sending telegram message: ${message}`);
           return {
-            body: message,
+            title: `📜 New proposal for ${realmName}`,
+            message,
           };
         },
-        (
-          {
-            context: {
-              origin: { realmMembersSubscribedToNotifications },
-            },
-          },
-          recipient,
-        ) => !!realmMembersSubscribedToNotifications[recipient.toBase58()],
+        { dispatch: 'multicast', to: ({ origin }) => origin.subscribers },
       )
-      .sms(
+      .custom<TwitterNotification>(
         ({ value, context }) => {
           const realmName: string = context.origin.realm.account.name;
           const realmId: string = context.origin.realm.pubkey.toBase58();
-          const message: string = this.constructMessage(
-            realmName,
-            realmId,
-            value,
-            context.origin.tokenOwnerRecordToGoverningTokenOwner,
-          );
-          this.logger.log(`Sending telegram message: ${message}`);
+          const message = this.constructMessage(realmName, realmId, value);
+          this.logger.log(`Sending tweet for ${realmName} : ${message}`);
           return {
-            body: message,
+            message,
           };
         },
-        (
-          {
-            context: {
-              origin: { realmMembersSubscribedToNotifications },
-            },
-          },
-          recipient,
-        ) => !!realmMembersSubscribedToNotifications[recipient.toBase58()],
-      )
-      .email(
-        ({ value, context }) => {
-          const realmName: string = context.origin.realm.account.name;
-          const realmId: string = context.origin.realm.pubkey.toBase58();
-          const message: string = this.constructMessage(
-            realmName,
-            realmId,
-            value,
-            context.origin.tokenOwnerRecordToGoverningTokenOwner,
-          );
-          this.logger.log(`Sending telegram message: ${message}`);
-          return {
-            subject: `📜 New proposal for ${realmName}`,
-            text: message,
-          };
+        this.twitterNotificationsSink,
+        {
+          dispatch: 'broadcast',
         },
-        (
-          {
-            context: {
-              origin: { realmMembersSubscribedToNotifications },
-            },
-          },
-          recipient,
-        ) => !!realmMembersSubscribedToNotifications[recipient.toBase58()],
       )
-      .custom<TwitterNotification>(({ value, context }) => {
-        const realmName: string = context.origin.realm.account.name;
-        const realmId: string = context.origin.realm.pubkey.toBase58();
-        const message = this.constructMessage(
-          realmName,
-          realmId,
-          value,
-          context.origin.tokenOwnerRecordToGoverningTokenOwner,
-        );
-        this.logger.log(`Sending tweet for ${realmName} : ${message}`);
-        return {
-          message,
-        };
-      }, this.notificationSink)
       .and()
-      .dispatch('broadcast')
       .build();
     monitor.start();
   }
@@ -206,16 +109,11 @@ export class MonitoringService implements OnModuleInit, OnModuleDestroy {
   private constructMessage(
     realmName: string,
     realmId: string,
-    proposalsAdded: ProgramAccount<Proposal>[],
-    tokenOwnerRecordToGoverningTokenOwner: TokenOwnerRecordToGoverningTokenOwnerType,
+    proposalsAdded: ProposalWithMetadata[],
   ): string {
     return [
-      ...proposalsAdded.map((it) => {
-        let walletAddress =
-          tokenOwnerRecordToGoverningTokenOwner[
-            it.account.tokenOwnerRecord.toBase58()
-          ];
-
+      ...proposalsAdded.map(({ proposal, author }) => {
+        let walletAddress = author?.toBase58();
         if (walletAddress) {
           walletAddress = `${walletAddress.substring(
             0,
@@ -223,8 +121,8 @@ export class MonitoringService implements OnModuleInit, OnModuleDestroy {
           )}...${walletAddress.substring(walletAddress.length - 5)}`;
         }
 
-        return `📜 New proposal for ${realmName}: https://realms.today/dao/${realmId}/proposal/${it.pubkey.toBase58()}
-${it.account.name}${walletAddress ? ` added by ${walletAddress}` : ''}`;
+        return `📜 New proposal for ${realmName}: https://realms.today/dao/${realmId}/proposal/${proposal.pubkey.toBase58()}
+${proposal.account.name}${walletAddress ? ` added by ${walletAddress}` : ''}`;
       }),
     ].join('\n');
   }
