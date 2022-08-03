@@ -10,6 +10,7 @@ import {
 } from '@dialectlabs/sdk';
 import { DialectSdk } from './dialect-sdk';
 import { ConfigModule } from '@nestjs/config';
+import { RealmsRestService } from './realms-rest-service';
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { ConfigModule } from '@nestjs/config';
   ],
   controllers: [],
   providers: [
+    RealmsRestService,
     MonitoringService,
     {
       provide: DialectSdk,
