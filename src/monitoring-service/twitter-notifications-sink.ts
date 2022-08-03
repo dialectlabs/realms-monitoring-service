@@ -22,7 +22,7 @@ export class TwitterNotificationsSink
     });
 
   async push({ message }: TwitterNotification): Promise<void> {
-    let shortenedText = message.replace(/\s+/g, ' ').slice(0, maxMsgLen);
+    const shortenedText = message.replace(/\s+/g, ' ').slice(0, maxMsgLen);
     // TODO: replace links with 23 characters (https://help.twitter.com/en/using-twitter/how-to-tweet-a-link)
     // const lastIndexOfSpace = shortenedText.lastIndexOf(' ');
     // shortenedText =

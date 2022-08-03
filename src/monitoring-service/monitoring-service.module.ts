@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { MonitoringService } from './monitoring.service';
 import { DialectConnection } from './dialect-connection';
+import { RealmsService } from './realms.service';
 
 @Module({
   controllers: [],
@@ -9,6 +10,7 @@ import { DialectConnection } from './dialect-connection';
       provide: DialectConnection,
       useValue: DialectConnection.initialize(),
     },
+    RealmsService,
     MonitoringService,
   ],
 })
