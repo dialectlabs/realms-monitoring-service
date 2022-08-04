@@ -1,5 +1,4 @@
 import { Module } from '@nestjs/common';
-import { MonitoringService } from './monitoring.service';
 import { LoggerModule } from 'nestjs-pino';
 import { HttpModule } from '@nestjs/axios';
 import {
@@ -12,10 +11,15 @@ import { DialectSdk } from './dialect-sdk';
 import { ConfigModule } from '@nestjs/config';
 import { RealmsRestService } from './realms-rest-service';
 import { RealmsService } from './realms.service';
+import { RealmsRepository } from './realms-repository';
+import { ScheduleModule } from '@nestjs/schedule';
+import { NewProposalsMonitoringService } from './new-proposals-monitoring.service';
+import { ProposalStateChangeMonitoringService } from './proposal-state-monitoring.service';
 
 @Module({
   imports: [
     HttpModule,
+    ScheduleModule.forRoot(),
     ConfigModule.forRoot(),
     LoggerModule.forRoot({
       pinoHttp: {
@@ -36,8 +40,10 @@ import { RealmsService } from './realms.service';
   controllers: [],
   providers: [
     RealmsRestService,
+    RealmsRepository,
     RealmsService,
-    MonitoringService,
+    NewProposalsMonitoringService,
+    ProposalStateChangeMonitoringService,
     {
       provide: DialectSdk,
       useValue: Dialect.sdk({

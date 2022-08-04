@@ -4,12 +4,7 @@ import {
   TwitterNotificationsSink,
 } from './twitter-notifications-sink';
 
-import {
-  DialectSdkNotification,
-  Monitors,
-  NotificationSink,
-  Pipelines,
-} from '@dialectlabs/monitor';
+import { Monitors, NotificationSink, Pipelines } from '@dialectlabs/monitor';
 import { Duration } from 'luxon';
 
 import { DialectSdk } from './dialect-sdk';
@@ -18,17 +13,13 @@ import {
   RealmData,
   RealmsService,
 } from './realms.service';
-import { ConsoleNotificationSink } from './console-notification-sink';
 
 @Injectable()
-export class MonitoringService implements OnModuleInit {
+export class NewProposalsMonitoringService implements OnModuleInit {
   private readonly twitterNotificationsSink: NotificationSink<TwitterNotification> =
     new TwitterNotificationsSink();
 
-  private readonly consoleNotificationSink: NotificationSink<DialectSdkNotification> =
-    new ConsoleNotificationSink<DialectSdkNotification>();
-
-  private readonly logger = new Logger(MonitoringService.name);
+  private readonly logger = new Logger(NewProposalsMonitoringService.name);
 
   constructor(
     private readonly sdk: DialectSdk,
@@ -53,23 +44,6 @@ export class MonitoringService implements OnModuleInit {
         ],
       })
       .notify()
-      .custom(
-        ({ value, context }) => {
-          const realmName: string = context.origin.realm.account.name;
-          const realmId: string = context.origin.realm.pubkey.toBase58();
-          const message: string = this.constructMessage(
-            realmName,
-            realmId,
-            value,
-          );
-          return {
-            title: `📜 New proposal for ${realmName}`,
-            message,
-          };
-        },
-        this.consoleNotificationSink,
-        { dispatch: 'multicast', to: ({ origin }) => origin.subscribers },
-      )
       .dialectSdk(
         ({ value, context }) => {
           const realmName: string = context.origin.realm.account.name;
@@ -78,6 +52,9 @@ export class MonitoringService implements OnModuleInit {
             realmName,
             realmId,
             value,
+          );
+          this.logger.log(
+            `Sending message for ${context.origin.subscribers.length} subscribers of realm ${realmId} : ${message}`,
           );
           return {
             title: `📜 New proposal for ${realmName}`,

@@ -1,26 +1,15 @@
 import { ResourceId, SourceData } from '@dialectlabs/monitor';
 import {
-  getAllProposals,
-  getAllTokenOwnerRecords,
-  getRealms,
   ProgramAccount,
   Proposal,
   Realm,
   TokenOwnerRecord,
 } from '@solana/spl-governance';
-import { Connection, PublicKey } from '@solana/web3.js';
+import { PublicKey } from '@solana/web3.js';
 import { Injectable, Logger } from '@nestjs/common';
-import { RealmsRestService } from './realms-rest-service';
-import { allSettledWithErrorLogging } from './utils/error-handling-utils';
 import { groupBy } from './utils/collection-utils';
-
-const mainSplGovernanceProgram = new PublicKey(
-  'GovER5Lthms3bLBqWub97yVrMmEogzX7xNjdXpPPCVZw',
-);
-
-const connection = new Connection(
-  process.env.REALMS_RPC_URL ?? process.env.RPC_URL!,
-);
+import { RealmsRepository } from './realms-repository';
+import { chain } from 'lodash';
 
 export interface RealmData {
   realm: ProgramAccount<Realm>;
@@ -33,53 +22,48 @@ export interface ProposalWithMetadata {
   author?: PublicKey;
 }
 
+export interface ProposalData {
+  proposal: ProgramAccount<Proposal>;
+  // author: PublicKey;
+  realm: ProgramAccount<Realm>;
+  realmSubscribers: ResourceId[];
+}
+
 @Injectable()
 export class RealmsService {
-  private readonly logger = new Logger(RealmsService.name);
+  constructor(private readonly realmsRepository: RealmsRepository) {}
 
-  constructor(private readonly realmsRestService: RealmsRestService) {}
+  private readonly logger = new Logger(RealmsService.name);
 
   async getRealmsData(
     subscribers: ResourceId[],
   ): Promise<SourceData<RealmData>[]> {
-    const splGovernancePrograms = await this.getSplGovernancePrograms();
-    this.logger.log(
-      `Found ${splGovernancePrograms.length} spl governance programs`,
-    );
-    const realms = await this.getRealms(splGovernancePrograms); /*.filter(
-      (it) =>
-        it.pubkey.toBase58() === 'AzCvN6DwPozJMhT7bSUok1C2wc4oAmYgm1wTo9vCKLap',
-    );*/
-    this.logger.log(`Found ${realms.length} realms`);
-    const realmPublicKeyToProposals = await this.getProposalsByRealmPublicKey(
-      realms,
-    );
-    this.logger.log(
-      `Found ${
-        Object.values(realmPublicKeyToProposals).flat().length
-      } proposals`,
-    );
+    await this.realmsRepository.initialization();
+    const realms = this.realmsRepository.realms;
+    const proposalsWithMetadataByRealmPublicKey =
+      this.getProposalsGroupedByRealmPublicKey();
+    const subscribersByRealmPublicKey = this.getSubscribers(subscribers);
+    const sourceData: SourceData<RealmData>[] = realms.map((realm) => {
+      const proposals =
+        proposalsWithMetadataByRealmPublicKey[realm.pubkey.toBase58()] ?? [];
+      const subscribers =
+        subscribersByRealmPublicKey[realm.pubkey.toBase58()] ?? [];
+      const realmData: RealmData = {
+        realm,
+        subscribers,
+        proposals,
+      };
+      return {
+        data: realmData,
+        groupingKey: realmData.realm.pubkey.toBase58(),
+      };
+    });
+    return sourceData;
+  }
+
+  private getSubscribers(subscribers: ResourceId[]) {
     const tokenOwnerRecordsByPublicKey =
-      await this.getAllTokenOwnerRecordsByPublicKey(realms);
-    this.logger.log(
-      `Found ${
-        Object.keys(tokenOwnerRecordsByPublicKey).length
-      } token owner records`,
-    );
-
-    const realmPublicKeyToProposalsWithMetadata = Object.fromEntries(
-      Object.entries(realmPublicKeyToProposals).map(([k, v]) => [
-        k,
-        v.map((proposal) => ({
-          proposal,
-          author:
-            tokenOwnerRecordsByPublicKey[
-              proposal.account.tokenOwnerRecord.toBase58()
-            ]?.account.governingTokenOwner,
-        })),
-      ]),
-    );
-
+      this.realmsRepository.tokenOwnerRecordsByPublicKey;
     const subscribersByPublicKey = Object.fromEntries(
       subscribers.map((it) => [it.toBase58(), it]),
     );
@@ -100,91 +84,73 @@ export class RealmsService {
         }),
       ]),
     );
-    const sourceData: SourceData<RealmData>[] = realms.map((realm) => {
-      const proposals =
-        realmPublicKeyToProposalsWithMetadata[realm.pubkey.toBase58()] ?? [];
-      const subscribers =
-        subscribersByRealmPublicKey[realm.pubkey.toBase58()] ?? [];
-      const realmData: RealmData = {
-        realm,
-        subscribers,
-        proposals,
-      };
-      return {
-        data: realmData,
-        groupingKey: realmData.realm.pubkey.toBase58(),
-      };
-    });
-
-    return sourceData;
+    return subscribersByRealmPublicKey;
   }
 
-  private async getSplGovernancePrograms(): Promise<PublicKey[]> {
-    // return [mainSplGovernanceProgram];
-    try {
-      const splGovernancePrograms =
-        await this.realmsRestService.getSplGovernancePrograms();
-      const allSplGovernancePrograms = [
-        ...new Set([
-          ...splGovernancePrograms.map((it) => it.toBase58()),
-          mainSplGovernanceProgram.toBase58(),
-        ]),
-      ];
-      return allSplGovernancePrograms.map((it) => new PublicKey(it));
-    } catch (e) {
-      const error = e as Error;
-      this.logger.error(
-        `Failed to get spl governance programs, reason: ${error.message} `,
-      );
-      return [mainSplGovernanceProgram];
-    }
+  async getProposalData(
+    subscribers: ResourceId[],
+  ): Promise<SourceData<ProposalData>[]> {
+    await this.realmsRepository.initialization();
+    const realms = this.realmsRepository.realms;
+    const proposals = this.getProposalsGroupedByRealmPublicKey();
+    const realmsByPublicKey = Object.fromEntries(
+      realms.map((it) => [it.pubkey, it]),
+    );
+    const subscribersByRealmPublicKey = this.getSubscribers(subscribers);
+
+    const sourceDatas = chain(proposals)
+      .flatMap((proposals, realmPublicKey) => {
+        const realm: ProgramAccount<Realm> = realmsByPublicKey[realmPublicKey];
+        if (!realm) {
+          this.logger.warn(`Cannot find realm for pubkey: ${realmPublicKey}`);
+          return [];
+        }
+        const realmSubscribers =
+          subscribersByRealmPublicKey[realm.pubkey.toBase58()] ?? [];
+        console.log(realmSubscribers);
+
+        return chain(
+          proposals.map((proposal) => {
+            const realmData: ProposalData = {
+              realm,
+              proposal: proposal.proposal,
+              // author: subscriber,
+              realmSubscribers,
+            };
+            const sd: SourceData<ProposalData> = {
+              groupingKey: proposal.proposal.pubkey.toBase58(),
+              data: realmData,
+            };
+            return sd;
+          }),
+        )
+          .compact()
+          .value();
+      })
+      .value();
+
+    return sourceDatas;
   }
 
-  private async getRealms(splGovernancePrograms: PublicKey[]) {
-    const result = await allSettledWithErrorLogging(
-      splGovernancePrograms.map((it) => getRealms(connection, it)),
-      (errors) => `Failed to get ${errors.length} realms, reasons: ${errors}`,
-    );
-    return result.fulfilledResults.flat();
-  }
-
-  private async getProposalsByRealmPublicKey(
-    realms: ProgramAccount<Realm>[],
-  ): Promise<Record<string, ProgramAccount<Proposal>[]>> {
-    const result = await allSettledWithErrorLogging(
-      realms.map(async (it) => {
-        const proposals = await getAllProposals(
-          connection,
-          it.owner,
-          it.pubkey,
-        );
-        return {
-          realmPublicKey: it.pubkey,
-          proposals: proposals.flat(),
-        };
-      }),
-      (errors) =>
-        `Failed to get proposals fpr ${errors.length} reams, reasons: ${errors}`,
-    );
-    return Object.fromEntries(
-      result.fulfilledResults.map(({ realmPublicKey, proposals }) => [
-        realmPublicKey.toBase58(),
-        proposals,
-      ]),
-    );
-  }
-
-  private async getAllTokenOwnerRecordsByPublicKey(
-    realms: ProgramAccount<Realm>[],
-  ): Promise<Record<string, ProgramAccount<TokenOwnerRecord>>> {
-    const result = await allSettledWithErrorLogging(
-      realms.map((it) =>
-        getAllTokenOwnerRecords(connection, it.owner, it.pubkey),
-      ),
-      (errors) =>
-        `Failed to get token owner records for ${errors.length} realms, reasons: ${errors}`,
-    );
-    const flattened = result.fulfilledResults.flat();
-    return Object.fromEntries(flattened.map((it) => [it.pubkey, it]));
+  private getProposalsGroupedByRealmPublicKey() {
+    const proposalsGroupedByRealm =
+      this.realmsRepository.proposalsGroupedByRealm;
+    const tokenOwnerRecordsByPublicKey =
+      this.realmsRepository.tokenOwnerRecordsByPublicKey;
+    const proposalsWithMetadataByRealmPublicKey: Record<
+      string,
+      ProposalWithMetadata[]
+    > = chain(proposalsGroupedByRealm)
+      .mapValues((proposals) =>
+        proposals.map((proposal) => ({
+          proposal,
+          author:
+            tokenOwnerRecordsByPublicKey[
+              proposal.account.tokenOwnerRecord.toBase58()
+            ]?.account.governingTokenOwner,
+        })),
+      )
+      .value();
+    return proposalsWithMetadataByRealmPublicKey;
   }
 }
