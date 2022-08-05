@@ -1,10 +1,10 @@
 import { NestFactory } from '@nestjs/core';
-import { MonitoringModule } from './monitoring.module';
+import { AppModule } from './app.module';
 import { Logger } from 'nestjs-pino';
 import { VersioningType } from '@nestjs/common';
 
 async function bootstrap() {
-  const app = await NestFactory.create(MonitoringModule, {
+  const app = await NestFactory.create(AppModule, {
     logger: ['log', 'warn', 'error'],
   });
   app.setGlobalPrefix('api');

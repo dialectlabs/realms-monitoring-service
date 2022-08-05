@@ -57,4 +57,4 @@ import { ProposalStateChangeMonitoringService } from './proposal-state-monitorin
     },
   ],
 })
-export class MonitoringModule {}
+export class AppModule {}
