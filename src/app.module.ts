@@ -42,11 +42,11 @@ import { TerminusModule } from '@nestjs/terminus';
   ],
   controllers: [HealthController],
   providers: [
-    RealmsRestService,
-    RealmsRepository,
-    RealmsService,
-    NewProposalsMonitoringService,
-    ProposalStateChangeMonitoringService,
+    // RealmsRestService,
+    // RealmsRepository,
+    // RealmsService,
+    // NewProposalsMonitoringService,
+    // ProposalStateChangeMonitoringService,
     {
       provide: DialectSdk,
       useValue: Dialect.sdk({
