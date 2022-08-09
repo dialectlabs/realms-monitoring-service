@@ -62,7 +62,7 @@ jobs:
       image_tag: ${{ steps.get-image-tag.outputs.image_tag }}
 
   cd_production:
-    if: ${{ contains(github.ref, 'heads/main') }}
+    if: ${{ contains(github.ref, 'heads/master') }}
     needs:
       - docker-image
     uses: ./.github/workflows/cd.yaml
