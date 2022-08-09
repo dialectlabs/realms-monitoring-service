@@ -19,7 +19,7 @@ const mainSplGovernanceProgram = new PublicKey(
 );
 
 const connection = new Connection(
-  process.env.REALMS_RPC_URL ?? process.env.RPC_URL!,
+  process.env.DIALECT_SDK_SOLANA_RPC_URL ?? process.env.REALMS_SOLANA_RPC_URL!,
 );
 
 @Injectable()

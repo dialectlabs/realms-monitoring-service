@@ -15,9 +15,12 @@ import { RealmsRepository } from './realms-repository';
 import { ScheduleModule } from '@nestjs/schedule';
 import { NewProposalsMonitoringService } from './new-proposals-monitoring.service';
 import { ProposalStateChangeMonitoringService } from './proposal-state-monitoring.service';
+import { HealthController } from './health.controller';
+import { TerminusModule } from '@nestjs/terminus';
 
 @Module({
   imports: [
+    TerminusModule,
     HttpModule,
     ScheduleModule.forRoot(),
     ConfigModule.forRoot(),
@@ -37,7 +40,7 @@ import { ProposalStateChangeMonitoringService } from './proposal-state-monitorin
       },
     }),
   ],
-  controllers: [],
+  controllers: [HealthController],
   providers: [
     RealmsRestService,
     RealmsRepository,
