@@ -1,4 +1,4 @@
-import { TwitterNotificationsSink } from '../src/monitoring-service/twitter-notifications-sink';
+import { TwitterNotificationsSink } from '../src/twitter-notifications-sink';
 
 async function main() {
   const twitterNotificationSink = new TwitterNotificationsSink();
