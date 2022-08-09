@@ -19,7 +19,7 @@ async function bootstrap() {
   console.info = (...it) => logger.log(it);
   console.warn = (...it) => logger.warn(it);
   console.error = (...it) => logger.error(it);
-  await app.listen(process.env.PORT ?? 8080);
+  await app.listen(process.env.PORT ?? 0);
 }
 
 bootstrap();
