@@ -85,9 +85,29 @@ export class ProposalStateChangeMonitoringService implements OnModuleInit {
     proposalStateChange: Change<ProgramAccount<Proposal>>,
   ): string {
     const proposal = proposalStateChange.current;
-    return `Proposal ${proposal.account.name} for ${realmName} is ${
-      ProposalState[proposal.account.state]?.toString().toLowerCase() ??
+    const proposalAccount = proposal.account;
+    const proposalLink = `https://realms.today/dao/${realmId}/proposal/${proposal.pubkey.toBase58()}`;
+    if (proposalAccount.state === ProposalState.ExecutingWithErrors) {
+      return `Proposal ${proposalAccount.name} for ${realmName} is executing with errors: ${proposalLink}`;
+    }
+    const yesVotesCount = proposalAccount.getYesVoteCount().toNumber();
+    const noVotesCount = proposalAccount.getNoVoteCount().toNumber();
+    const totalVotesCount = yesVotesCount + noVotesCount;
+    if (proposalAccount.state === ProposalState.Succeeded) {
+      const yesVotePercentage = Math.round(
+        (yesVotesCount / totalVotesCount) * 100,
+      );
+      return `Proposal ${proposalAccount.name} for ${realmName} has succeeded with ${yesVotePercentage}% of votes (${yesVotesCount} yes votes, ${noVotesCount} no votes): ${proposalLink}`;
+    }
+    if (proposalAccount.state === ProposalState.Defeated) {
+      const noVotePercentage = Math.round(
+        (noVotesCount / totalVotesCount) * 100,
+      );
+      return `Proposal ${proposalAccount.name} for ${realmName} has defeated with ${noVotePercentage}% of votes (${yesVotesCount} yes votes, ${noVotesCount} no votes): ${proposalLink}`;
+    }
+    return `Proposal ${proposalAccount.name} for ${realmName} has ${
+      ProposalState[proposalAccount.state]?.toString().toLowerCase() ??
       'changed'
-    }: https://realms.today/dao/${realmId}/proposal/${proposal.pubkey.toBase58()}`;
+    }: ${proposalLink}`;
   }
 }
