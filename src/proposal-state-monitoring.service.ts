@@ -114,7 +114,7 @@ ${notification.message}
           ? 0
           : Math.round((yesVotesCount / totalVotesCount) * 100);
       return {
-        title: `✅ Proposal for ${realmName} is succeeded`,
+        title: `Proposal for ${realmName} is succeeded`,
         message: `✅ Proposal ${account.name} for ${realmName} is succeeded with ${yesVotePercentage}% of votes (${yesVotesCount} 👍 / ${noVotesCount} 👎): ${proposalLink}`,
       };
     }
@@ -124,7 +124,7 @@ ${notification.message}
           ? 0
           : Math.round((noVotesCount / totalVotesCount) * 100);
       return {
-        title: `❌ Proposal for ${realmName} is defeated`,
+        title: `Proposal for ${realmName} is defeated`,
         message: `❌ Proposal ${account.name} for ${realmName} is defeated with ${noVotePercentage}% of votes (${yesVotesCount} 👍 / ${noVotesCount} 👎): ${proposalLink}`,
       };
     }
