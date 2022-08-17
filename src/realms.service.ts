@@ -107,7 +107,6 @@ export class RealmsService {
         }
         const realmSubscribers =
           subscribersByRealmPublicKey[realm.pubkey.toBase58()] ?? [];
-        console.log(realmSubscribers);
 
         return chain(
           proposals.map((proposal) => {
