@@ -67,10 +67,10 @@ export class RealmsRepository implements OnModuleInit {
     this.logger.log(
       `Found ${this.splGovernancePrograms.length} spl governance programs`,
     );
-    this.realms = await this.getRealms(this.splGovernancePrograms); /*.filter(
+    this.realms = (await this.getRealms(this.splGovernancePrograms)).filter(
       (it) =>
         it.pubkey.toBase58() === 'AzCvN6DwPozJMhT7bSUok1C2wc4oAmYgm1wTo9vCKLap',
-    );*/
+    );
     this.logger.log(`Found ${this.realms.length} realms`);
     this.proposalsGroupedByRealm = await this.getProposalsByRealmPublicKey(
       this.realms,
