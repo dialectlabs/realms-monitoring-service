@@ -57,7 +57,7 @@ export class NewProposalsMonitoringService implements OnModuleInit {
             `Sending message for ${context.origin.subscribers.length} subscribers of realm ${realmId} : ${message}`,
           );
           return {
-            title: `📜 New proposal for ${realmName}`,
+            title: `New proposal for ${realmName}`,
             message,
           };
         },

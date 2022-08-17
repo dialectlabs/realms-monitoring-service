@@ -1,6 +1,11 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 
-import { Change, Monitors, Pipelines } from '@dialectlabs/monitor';
+import {
+  Change,
+  DialectSdkNotification,
+  Monitors,
+  Pipelines,
+} from '@dialectlabs/monitor';
 import { Duration } from 'luxon';
 
 import { DialectSdk } from './dialect-sdk';
@@ -36,11 +41,11 @@ export class ProposalStateChangeMonitoringService implements OnModuleInit {
         pipelines: [
           Pipelines.change((p1, p2) => {
             const terminalStates: ProposalState[] = [
-              ProposalState.Succeeded,
-              ProposalState.Completed,
-              ProposalState.Defeated,
-              ProposalState.Cancelled,
               ProposalState.ExecutingWithErrors,
+              ProposalState.Cancelled,
+              ProposalState.Succeeded,
+              ProposalState.Defeated,
+              ProposalState.Completed,
             ];
             const isChangedToTerminalState = Boolean(
               terminalStates.find((it) => p2.account.state === it),
@@ -56,21 +61,18 @@ export class ProposalStateChangeMonitoringService implements OnModuleInit {
         ({ value, context }) => {
           const realmName: string = context.origin.realm.account.name;
           const realmId: string = context.origin.realm.pubkey.toBase58();
-          const message: string = this.constructMessage(
+          const notification = this.constructNotification(
             realmName,
             realmId,
             value,
           );
           this.logger.log(
-            `Sending message for ${context.origin.realmSubscribers.length} subscribers of realm ${realmId} : ${message}`,
+            `Sending message for ${context.origin.realmSubscribers.length} subscribers of realm ${realmId}
+${notification.title}            
+${notification.message}            
+            `,
           );
-          return {
-            title: `📜 Proposal for ${realmName} is ${
-              ProposalState[value.current.account.state]?.toLowerCase() ??
-              'changed'
-            }`,
-            message,
-          };
+          return notification;
         },
         { dispatch: 'multicast', to: ({ origin }) => origin.realmSubscribers },
       )
@@ -79,15 +81,60 @@ export class ProposalStateChangeMonitoringService implements OnModuleInit {
     monitor.start();
   }
 
-  private constructMessage(
+  private constructNotification(
     realmName: string,
     realmId: string,
-    proposalStateChange: Change<ProgramAccount<Proposal>>,
-  ): string {
-    const proposal = proposalStateChange.current;
-    return `Proposal ${proposal.account.name} for ${realmName} is ${
-      ProposalState[proposal.account.state]?.toString().toLowerCase() ??
-      'changed'
-    }: https://realms.today/dao/${realmId}/proposal/${proposal.pubkey.toBase58()}`;
+    { current: { pubkey, account } }: Change<ProgramAccount<Proposal>>,
+  ): DialectSdkNotification {
+    const proposalLink = `https://realms.today/dao/${realmId}/proposal/${pubkey.toBase58()}`;
+    if (account.state === ProposalState.ExecutingWithErrors) {
+      return {
+        title: `Proposal for ${realmName} is executing with errors`,
+        message: `Proposal ${account.name} for ${realmName} is executing with errors: ${proposalLink}`,
+      };
+    }
+    if (account.state === ProposalState.Cancelled) {
+      return {
+        title: `Proposal for ${realmName} is canceled`,
+        message: `Proposal ${account.name} for ${realmName} is canceled: ${proposalLink}`,
+      };
+    }
+    if (account.state === ProposalState.Completed) {
+      return {
+        title: `Proposal for ${realmName} is completed`,
+        message: `Proposal ${account.name} for ${realmName} is completed: ${proposalLink}`,
+      };
+    }
+    const yesVotesCount = account.getYesVoteCount().toNumber();
+    const noVotesCount = account.getNoVoteCount().toNumber();
+    const totalVotesCount = yesVotesCount + noVotesCount;
+    if (account.state === ProposalState.Succeeded) {
+      const yesVotePercentage =
+        totalVotesCount === 0
+          ? 0
+          : Math.round((yesVotesCount / totalVotesCount) * 100);
+      return {
+        title: `Proposal for ${realmName} is succeeded`,
+        message: `✅ Proposal ${account.name} for ${realmName} is succeeded with ${yesVotePercentage}% of votes (${yesVotesCount} 👍 / ${noVotesCount} 👎): ${proposalLink}`,
+      };
+    }
+    if (account.state === ProposalState.Defeated) {
+      const noVotePercentage =
+        totalVotesCount === 0
+          ? 0
+          : Math.round((noVotesCount / totalVotesCount) * 100);
+      return {
+        title: `Proposal for ${realmName} is defeated`,
+        message: `❌ Proposal ${account.name} for ${realmName} is defeated with ${noVotePercentage}% of votes (${yesVotesCount} 👍 / ${noVotesCount} 👎): ${proposalLink}`,
+      };
+    }
+    return {
+      title: `Proposal for ${realmName} ${
+        ProposalState[account.state]?.toString() ?? 'changed'
+      }`,
+      message: `Proposal ${account.name} for ${realmName} is ${
+        ProposalState[account.state]?.toString() ?? 'changed'
+      }: ${proposalLink}`,
+    };
   }
 }
