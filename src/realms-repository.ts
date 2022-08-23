@@ -27,7 +27,7 @@ export class RealmsRepository implements OnModuleInit {
   private readonly logger = new Logger(RealmsRepository.name);
 
   splGovernancePrograms: PublicKey[] = [];
-  realms: ProgramAccount<Realm>[] = [];
+  realms: Record<string, ProgramAccount<Realm>> = {};
   proposalsGroupedByRealm: Record<string, ProgramAccount<Proposal>[]> = {};
   tokenOwnerRecordsByPublicKey: Record<
     string,
@@ -67,21 +67,31 @@ export class RealmsRepository implements OnModuleInit {
     this.logger.log(
       `Found ${this.splGovernancePrograms.length} spl governance programs`,
     );
-    this.realms = await this.getRealms(this.splGovernancePrograms); /*.filter(
+    const fetchedRealms = await this.getRealms(this.splGovernancePrograms);
+    this.realms = Object.assign(this.realms, fetchedRealms);
+    /*.filter(
       (it) =>
         it.pubkey.toBase58() === 'AzCvN6DwPozJMhT7bSUok1C2wc4oAmYgm1wTo9vCKLap',
     );*/
     this.logger.log(`Found ${this.realms.length} realms`);
-    this.proposalsGroupedByRealm = await this.getProposalsByRealmPublicKey(
-      this.realms,
+    const fetchedProposals = await this.getProposalsByRealmPublicKey(
+      Object.values(this.realms),
+    );
+    this.proposalsGroupedByRealm = Object.assign(
+      this.proposalsGroupedByRealm,
+      fetchedProposals,
     );
     this.logger.log(
       `Found ${
         Object.values(this.proposalsGroupedByRealm).flat().length
       } proposals`,
     );
-    this.tokenOwnerRecordsByPublicKey =
-      await this.getAllTokenOwnerRecordsByPublicKey(this.realms);
+    const fetchedTokenOwnerRecords =
+      await this.getAllTokenOwnerRecordsByPublicKey(Object.values(this.realms));
+    this.tokenOwnerRecordsByPublicKey = Object.assign(
+      this.tokenOwnerRecordsByPublicKey,
+      fetchedTokenOwnerRecords,
+    );
     this.logger.log(
       `Found ${
         Object.keys(this.tokenOwnerRecordsByPublicKey).length
@@ -117,7 +127,8 @@ export class RealmsRepository implements OnModuleInit {
       splGovernancePrograms.map((it) => getRealms(connection, it)),
       (errors) => `Failed to get ${errors.length} realms, reasons: ${errors}`,
     );
-    return result.fulfilledResults.flat();
+    const flat = result.fulfilledResults.flat();
+    return Object.fromEntries(flat.map((it) => [it.pubkey.toBase58(), it]));
   }
 
   private async getProposalsByRealmPublicKey(

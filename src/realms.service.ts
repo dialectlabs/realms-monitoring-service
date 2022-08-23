@@ -39,7 +39,7 @@ export class RealmsService {
     subscribers: ResourceId[],
   ): Promise<SourceData<RealmData>[]> {
     await this.realmsRepository.initialization();
-    const realms = this.realmsRepository.realms;
+    const realms = Object.values(this.realmsRepository.realms);
     const proposalsWithMetadataByRealmPublicKey =
       this.getProposalsGroupedByRealmPublicKey();
     const subscribersByRealmPublicKey = this.getSubscribers(subscribers);
@@ -91,7 +91,7 @@ export class RealmsService {
     subscribers: ResourceId[],
   ): Promise<SourceData<ProposalData>[]> {
     await this.realmsRepository.initialization();
-    const realms = this.realmsRepository.realms;
+    const realms = Object.values(this.realmsRepository.realms);
     const proposals = this.getProposalsGroupedByRealmPublicKey();
     const realmsByPublicKey = Object.fromEntries(
       realms.map((it) => [it.pubkey, it]),
