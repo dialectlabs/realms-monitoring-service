@@ -73,7 +73,7 @@ export class RealmsRepository implements OnModuleInit {
       (it) =>
         it.pubkey.toBase58() === 'AzCvN6DwPozJMhT7bSUok1C2wc4oAmYgm1wTo9vCKLap',
     );*/
-    this.logger.log(`Found ${this.realms.length} realms`);
+    this.logger.log(`Found ${Object.values(this.realms).length} realms`);
     const fetchedProposals = await this.getProposalsByRealmPublicKey(
       Object.values(this.realms),
     );
