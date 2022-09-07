@@ -13,12 +13,12 @@ async function bootstrap() {
   });
   const logger = app.get(Logger);
   app.useLogger(logger);
-  console.trace = (...it) => logger.verbose(it);
-  console.debug = (...it) => logger.debug(it);
-  console.log = (...it) => logger.log(it);
-  console.info = (...it) => logger.log(it);
-  console.warn = (...it) => logger.warn(it);
-  console.error = (...it) => logger.error(it);
+  console.trace = (message, ...context) => logger.verbose(message, context);
+  console.debug = (message, ...context) => logger.debug(message, context);
+  console.log = (message, ...context) => logger.log(message, context);
+  console.info = (message, ...context) => logger.log(message, context);
+  console.warn = (message, ...context) => logger.warn(message, context);
+  console.error = (message, ...context) => logger.error(message, context);
   await app.listen(process.env.PORT ?? 0);
 }
 
