@@ -14,7 +14,16 @@ import {
   ProgramAccount,
   Proposal,
   ProposalState,
+  Realm,
 } from '@solana/spl-governance';
+import { fmtTokenAmount, RealmMints } from './realms-repository';
+
+interface ProposalVotingStats {
+  yesCount: number;
+  noCount: number;
+  relativeYesCount: number;
+  relativeNoCount: number;
+}
 
 @Injectable()
 export class ProposalStateChangeMonitoringService implements OnModuleInit {
@@ -59,33 +68,52 @@ export class ProposalStateChangeMonitoringService implements OnModuleInit {
       .notify()
       .dialectSdk(
         ({ value, context }) => {
-          const realmName: string = context.origin.realm.account.name;
           const realmId: string = context.origin.realm.pubkey.toBase58();
           const notification = this.constructNotification(
-            realmName,
+            context.origin.realm.account,
             realmId,
             value,
           );
           this.logger.log(
             `Sending message for ${context.origin.realmSubscribers.length} subscribers of realm ${realmId}
-${notification.title}            
-${notification.message}            
-            `,
+      ${notification.title}
+      ${notification.message}
+                  `,
           );
           return notification;
         },
         { dispatch: 'multicast', to: ({ origin }) => origin.realmSubscribers },
       )
+      //       .custom<DialectSdkNotification>(
+      //         ({ value, context }) => {
+      //           const realmId: string = context.origin.realm.pubkey.toBase58();
+      //           const notification = this.constructNotification(
+      //             context.origin.realm.account,
+      //             realmId,
+      //             value,
+      //           );
+      //           this.logger.log(
+      //             `Sending message for ${context.origin.realmSubscribers.length} subscribers of realm ${realmId}
+      // ${notification.title}
+      // ${notification.message}
+      //             `,
+      //           );
+      //           return notification;
+      //         },
+      //         new ConsoleNotificationSink(),
+      //         { dispatch: 'multicast', to: ({ origin }) => origin.realmSubscribers },
+      //       )
       .and()
       .build();
     monitor.start();
   }
 
   private constructNotification(
-    realmName: string,
+    realm: Realm & RealmMints,
     realmId: string,
     { current: { pubkey, account } }: Change<ProgramAccount<Proposal>>,
   ): DialectSdkNotification {
+    const realmName: string = realm.name;
     const proposalLink = `https://realms.today/dao/${realmId}/proposal/${pubkey.toBase58()}`;
     if (account.state === ProposalState.ExecutingWithErrors) {
       return {
@@ -105,27 +133,28 @@ ${notification.message}
         message: `Proposal ${account.name} for ${realmName} is completed: ${proposalLink}`,
       };
     }
-    const yesVotesCount = account.getYesVoteCount().toNumber();
-    const noVotesCount = account.getNoVoteCount().toNumber();
-    const totalVotesCount = yesVotesCount + noVotesCount;
+
+    const { yesCount, noCount, relativeYesCount, relativeNoCount } =
+      getVotingStats(account, realm);
+
     if (account.state === ProposalState.Succeeded) {
-      const yesVotePercentage =
-        totalVotesCount === 0
-          ? 0
-          : Math.round((yesVotesCount / totalVotesCount) * 100);
       return {
         title: `Proposal for ${realmName} is succeeded`,
-        message: `✅ Proposal ${account.name} for ${realmName} is succeeded with ${yesVotePercentage}% of votes (${yesVotesCount} 👍 / ${noVotesCount} 👎): ${proposalLink}`,
+        message: `✅ Proposal ${
+          account.name
+        } for ${realmName} is succeeded with ${relativeYesCount.toFixed(
+          1,
+        )}% of 👍 votes (${yesCount} 👍 / ${noCount} 👎): ${proposalLink}`,
       };
     }
     if (account.state === ProposalState.Defeated) {
-      const noVotePercentage =
-        totalVotesCount === 0
-          ? 0
-          : Math.round((noVotesCount / totalVotesCount) * 100);
       return {
         title: `Proposal for ${realmName} is defeated`,
-        message: `❌ Proposal ${account.name} for ${realmName} is defeated with ${noVotePercentage}% of votes (${yesVotesCount} 👍 / ${noVotesCount} 👎): ${proposalLink}`,
+        message: `❌ Proposal ${
+          account.name
+        } for ${realmName} is defeated with ${relativeNoCount.toFixed(
+          1,
+        )}% of 👎 votes (${yesCount} 👍 / ${noCount} 👎): ${proposalLink}`,
       };
     }
     return {
@@ -137,4 +166,45 @@ ${notification.message}
       }: ${proposalLink}`,
     };
   }
+}
+
+function getVotingStats(
+  proposal: Proposal,
+  realm: Realm & RealmMints,
+): ProposalVotingStats {
+  const isMultiProposal = proposal?.options?.length > 1;
+  const proposalMint =
+    proposal?.governingTokenMint.toBase58() === realm.communityMint.toBase58()
+      ? realm.mint
+      : realm.councilMint;
+
+  if (!proposalMint) {
+    return {
+      yesCount: 0,
+      relativeYesCount: 0,
+      noCount: 0,
+      relativeNoCount: 0,
+    };
+  }
+  const yesCount = !isMultiProposal
+    ? fmtTokenAmount(proposal.getYesVoteCount(), proposalMint.decimals)
+    : 0;
+  const noCount = !isMultiProposal
+    ? fmtTokenAmount(proposal.getNoVoteCount(), proposalMint.decimals)
+    : 0;
+
+  const totalVoteCount = yesCount + noCount;
+
+  const getRelativeVoteCount = (voteCount: number) =>
+    totalVoteCount === 0 ? 0 : (voteCount / totalVoteCount) * 100;
+
+  const relativeYesCount = getRelativeVoteCount(yesCount);
+  const relativeNoCount = getRelativeVoteCount(noCount);
+
+  return {
+    yesCount,
+    noCount,
+    relativeYesCount,
+    relativeNoCount,
+  };
 }

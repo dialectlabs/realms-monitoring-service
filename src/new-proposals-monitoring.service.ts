@@ -44,6 +44,29 @@ export class NewProposalsMonitoringService implements OnModuleInit {
         ],
       })
       .notify()
+      // .custom<DialectSdkNotification>(
+      //   ({ value, context }) => {
+      //     const realmName: string = context.origin.realm.account.name;
+      //     const realmId: string = context.origin.realm.pubkey.toBase58();
+      //     const message: string = this.constructMessage(
+      //       realmName,
+      //       realmId,
+      //       value,
+      //     );
+      //     this.logger.log(
+      //       `Sending message for ${context.origin.subscribers.length} subscribers of realm ${realmId} : ${message}`,
+      //     );
+      //     return {
+      //       title: `New proposal for ${realmName}`,
+      //       message,
+      //     };
+      //   },
+      //   new ConsoleNotificationSink(),
+      //   {
+      //     dispatch: 'multicast',
+      //     to: (ctx) => ctx.origin.subscribers,
+      //   },
+      // )
       .dialectSdk(
         ({ value, context }) => {
           const realmName: string = context.origin.realm.account.name;

@@ -13,6 +13,8 @@ import {
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { RealmsRestService } from './realms-rest-service';
 import { allSettledWithErrorLogging } from './utils/error-handling-utils';
+import { MintInfo, MintLayout, u64 } from '@solana/spl-token';
+import * as BN from 'bn.js';
 
 const mainSplGovernanceProgram = new PublicKey(
   'GovER5Lthms3bLBqWub97yVrMmEogzX7xNjdXpPPCVZw',
@@ -21,13 +23,24 @@ const mainSplGovernanceProgram = new PublicKey(
 const connection = new Connection(
   process.env.DIALECT_SDK_SOLANA_RPC_URL ?? process.env.REALMS_SOLANA_RPC_URL!,
 );
+export type TokenProgramAccount<T> = {
+  publicKey: PublicKey;
+  account: T;
+};
+
+export type MintAccount = MintInfo;
+
+export interface RealmMints {
+  mint?: MintInfo;
+  councilMint?: MintInfo;
+}
 
 @Injectable()
 export class RealmsRepository implements OnModuleInit {
   private readonly logger = new Logger(RealmsRepository.name);
 
   splGovernancePrograms: PublicKey[] = [];
-  realms: Record<string, ProgramAccount<Realm>> = {};
+  realms: Record<string, ProgramAccount<Realm & RealmMints>> = {};
   proposalsGroupedByRealm: Record<string, ProgramAccount<Proposal>[]> = {};
   tokenOwnerRecordsByPublicKey: Record<
     string,
@@ -69,10 +82,6 @@ export class RealmsRepository implements OnModuleInit {
     );
     const fetchedRealms = await this.getRealms(this.splGovernancePrograms);
     this.realms = Object.assign(this.realms, fetchedRealms);
-    /*.filter(
-      (it) =>
-        it.pubkey.toBase58() === 'AzCvN6DwPozJMhT7bSUok1C2wc4oAmYgm1wTo9vCKLap',
-    );*/
     this.logger.log(`Found ${Object.values(this.realms).length} realms`);
     const fetchedProposals = await this.getProposalsByRealmPublicKey(
       Object.values(this.realms),
@@ -127,8 +136,54 @@ export class RealmsRepository implements OnModuleInit {
       splGovernancePrograms.map((it) => getRealms(connection, it)),
       (errors) => `Failed to get ${errors.length} realms, reasons: ${errors}`,
     );
-    const flat = result.fulfilledResults.flat();
-    return Object.fromEntries(flat.map((it) => [it.pubkey.toBase58(), it]));
+    const allRealms = result.fulfilledResults.flat();
+
+    const realmsWithMints = await allSettledWithErrorLogging(
+      allRealms.map(async (realm) => {
+        const mintsArray = (
+          await Promise.all([
+            realm.account.communityMint
+              ? tryGetMint(connection, realm.account.communityMint)
+              : undefined,
+            realm.account.config?.councilMint
+              ? tryGetMint(connection, realm.account.config.councilMint)
+              : undefined,
+          ])
+        ).filter(Boolean);
+
+        const realmMints = Object.fromEntries(
+          mintsArray.map((m) => [m!.publicKey.toBase58(), m!.account]),
+        );
+        const realmMintPk = realm.account.communityMint;
+        const realmMint = realmMints[realmMintPk.toBase58()];
+        const realmCouncilMintPk = realm.account.config.councilMint;
+        const realmCouncilMint =
+          realmCouncilMintPk && realmMints[realmCouncilMintPk.toBase58()];
+        const mints: RealmMints = {
+          mint: realmMint,
+          councilMint: realmCouncilMint,
+        };
+        return {
+          ...realm,
+          account: {
+            ...realm.account,
+            ...mints,
+          },
+        };
+      }),
+      (errors) =>
+        `Failed to get ${errors.length} realm mint data, reasons: ${errors}`,
+    );
+    // const filtered = realmsWithMints.fulfilledResults.filter(
+    //   (it) =>
+    //     it.pubkey.toBase58() ===
+    //       'AzCvN6DwPozJMhT7bSUok1C2wc4oAmYgm1wTo9vCKLap' ||
+    //     it.pubkey.toBase58() === 'By2sVGZXwfQq6rAiAM3rNPJ9iQfb5e2QhnF4YjJ4Bip',
+    // );
+    return Object.fromEntries(
+      // realmsWithMints.fulfilledResults.map((it) => [it.pubkey.toBase58(), it]),
+      realmsWithMints.fulfilledResults.map((it) => [it.pubkey.toBase58(), it]),
+    );
   }
 
   private async getProposalsByRealmPublicKey(
@@ -153,6 +208,17 @@ export class RealmsRepository implements OnModuleInit {
       result.fulfilledResults.map(({ realmPublicKey, proposals }) => [
         realmPublicKey.toBase58(),
         proposals,
+        // proposals.map((it) => {
+        //   const account = it.account;
+        //   account.state =
+        //     Math.random() > 0.5
+        //       ? ProposalState.Voting
+        //       : ProposalState.Succeeded;
+        //   return {
+        //     ...it,
+        //     account: account,
+        //   };
+        // }),
       ]),
     );
   }
@@ -171,3 +237,42 @@ export class RealmsRepository implements OnModuleInit {
     return Object.fromEntries(flattened.map((it) => [it.pubkey, it]));
   }
 }
+
+export async function tryGetMint(
+  connection: Connection,
+  publicKey: PublicKey,
+): Promise<TokenProgramAccount<MintAccount> | undefined> {
+  try {
+    const result = await connection.getAccountInfo(publicKey);
+    const data = Buffer.from(result!.data);
+    const account = parseMintAccountData(data);
+    return {
+      publicKey,
+      account,
+    };
+  } catch (ex) {
+    console.warn(`Can't fetch mint ${publicKey?.toBase58()}`, ex);
+  }
+}
+
+export function parseMintAccountData(data: Buffer) {
+  const mintInfo = MintLayout.decode(data);
+  if (mintInfo.mintAuthorityOption === 0) {
+    mintInfo.mintAuthority = null;
+  } else {
+    mintInfo.mintAuthority = new PublicKey(mintInfo.mintAuthority);
+  }
+
+  mintInfo.supply = u64.fromBuffer(mintInfo.supply);
+  mintInfo.isInitialized = mintInfo.isInitialized != 0;
+
+  if (mintInfo.freezeAuthorityOption === 0) {
+    mintInfo.freezeAuthority = null;
+  } else {
+    mintInfo.freezeAuthority = new PublicKey(mintInfo.freezeAuthority);
+  }
+  return mintInfo;
+}
+
+export const fmtTokenAmount = (c: BN, decimals?: number) =>
+  c?.div(new BN(10).pow(new BN(decimals ?? 0))).toNumber() || 0;
