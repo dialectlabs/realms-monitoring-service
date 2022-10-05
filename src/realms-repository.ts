@@ -15,6 +15,12 @@ import { RealmsRestService } from './realms-rest-service';
 import { allSettledWithErrorLogging } from './utils/error-handling-utils';
 import { MintInfo, MintLayout, u64 } from '@solana/spl-token';
 import * as BN from 'bn.js';
+import { EventEmitter2 } from '@nestjs/event-emitter';
+import {
+  CachingEventType,
+  CachingFinishedEvent,
+  CachingStartedEvent,
+} from './caching.health';
 
 const mainSplGovernanceProgram = new PublicKey(
   'GovER5Lthms3bLBqWub97yVrMmEogzX7xNjdXpPPCVZw',
@@ -37,6 +43,11 @@ export interface RealmMints {
 
 @Injectable()
 export class RealmsRepository implements OnModuleInit {
+  private static readonly MAX_CACHING_EXECUTION_TIME_MILLS = process.env
+    .MAX_CACHING_EXECUTION_TIME_MILLS
+    ? parseInt(process.env.MAX_CACHING_EXECUTION_TIME_MILLS, 10)
+    : 600000;
+  private static readonly SET_TIMEOUT_DELAY = 10000;
   private readonly logger = new Logger(RealmsRepository.name);
 
   splGovernancePrograms: PublicKey[] = [];
@@ -50,7 +61,10 @@ export class RealmsRepository implements OnModuleInit {
   cachingInProgress = false;
   isInitialized: Promise<void>;
 
-  constructor(private readonly realmsRestService: RealmsRestService) {}
+  constructor(
+    private readonly realmsRestService: RealmsRestService,
+    private readonly eventEmitter: EventEmitter2,
+  ) {}
 
   async onModuleInit() {
     this.isInitialized = this.tryCacheData();
@@ -66,10 +80,32 @@ export class RealmsRepository implements OnModuleInit {
       return;
     }
     this.cachingInProgress = true;
+    const cachingStartedEvent: CachingStartedEvent = {
+      timeStarted: Date.now(),
+      maxTimeOut:
+        RealmsRepository.MAX_CACHING_EXECUTION_TIME_MILLS +
+        RealmsRepository.SET_TIMEOUT_DELAY,
+      type: CachingEventType.Started,
+    };
+    this.eventEmitter.emit(CachingEventType.Started, cachingStartedEvent);
     try {
-      await this.cacheAccounts();
+      await new Promise(async (resolve, reject) => {
+        resolve(await this.cacheAccounts());
+        setTimeout(
+          () => reject('timeout'),
+          RealmsRepository.MAX_CACHING_EXECUTION_TIME_MILLS,
+        );
+      }).catch((reason) => {
+        if (reason === 'timeout') {
+          this.logger.warn('Caching stopped due to timeout');
+        }
+      });
     } finally {
       this.cachingInProgress = false;
+      const cachingFinishedEvent: CachingFinishedEvent = {
+        type: CachingEventType.Finished,
+      };
+      this.eventEmitter.emit(CachingEventType.Finished, cachingFinishedEvent);
     }
   }
 
@@ -83,6 +119,7 @@ export class RealmsRepository implements OnModuleInit {
     const fetchedRealms = await this.getRealms(this.splGovernancePrograms);
     this.realms = Object.assign(this.realms, fetchedRealms);
     this.logger.log(`Found ${Object.values(this.realms).length} realms`);
+    this.logger.log('Start finding proposals');
     const fetchedProposals = await this.getProposalsByRealmPublicKey(
       Object.values(this.realms),
     );
