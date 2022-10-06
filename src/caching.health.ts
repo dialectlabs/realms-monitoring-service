@@ -13,7 +13,7 @@ export interface CachingEvent {
 export interface CachingStartedEvent extends CachingEvent {
   type: CachingEventType.Started;
   timeStarted: number;
-  maxTimeOut: number;
+  maxTimeout: number;
 }
 
 export interface CachingFinishedEvent extends CachingEvent {
@@ -45,8 +45,8 @@ export class CachingHealth extends HealthIndicator {
   }
 
   @OnEvent(CachingEventType.Started)
-  incrementIngestionAttempts({ timeStarted, maxTimeOut }: CachingStartedEvent) {
-    this.lastTimout = maxTimeOut;
+  incrementIngestionAttempts({ timeStarted, maxTimeout }: CachingStartedEvent) {
+    this.lastTimout = maxTimeout;
     this.lastStartedCaching = timeStarted;
     this.cachingInProgress = true;
   }

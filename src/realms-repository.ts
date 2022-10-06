@@ -82,24 +82,14 @@ export class RealmsRepository implements OnModuleInit {
     this.cachingInProgress = true;
     const cachingStartedEvent: CachingStartedEvent = {
       timeStarted: Date.now(),
-      maxTimeOut:
+      maxTimeout:
         RealmsRepository.MAX_CACHING_EXECUTION_TIME_MILLS +
         RealmsRepository.SET_TIMEOUT_DELAY,
       type: CachingEventType.Started,
     };
     this.eventEmitter.emit(CachingEventType.Started, cachingStartedEvent);
     try {
-      await new Promise(async (resolve, reject) => {
-        resolve(await this.cacheAccounts());
-        setTimeout(
-          () => reject('timeout'),
-          RealmsRepository.MAX_CACHING_EXECUTION_TIME_MILLS,
-        );
-      }).catch((reason) => {
-        if (reason === 'timeout') {
-          this.logger.warn('Caching stopped due to timeout');
-        }
-      });
+      await this.cacheAccounts();
     } finally {
       this.cachingInProgress = false;
       const cachingFinishedEvent: CachingFinishedEvent = {
@@ -219,7 +209,6 @@ export class RealmsRepository implements OnModuleInit {
     // );
     return Object.fromEntries(
       // realmsWithMints.fulfilledResults.map((it) => [it.pubkey.toBase58(), it]),
-      realmsWithMints.fulfilledResults.map((it) => [it.pubkey.toBase58(), it]),
     );
   }
 
