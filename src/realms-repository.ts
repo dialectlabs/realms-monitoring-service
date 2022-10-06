@@ -208,7 +208,8 @@ export class RealmsRepository implements OnModuleInit {
     //     it.pubkey.toBase58() === 'By2sVGZXwfQq6rAiAM3rNPJ9iQfb5e2QhnF4YjJ4Bip',
     // );
     return Object.fromEntries(
-      // realmsWithMints.fulfilledResults.map((it) => [it.pubkey.toBase58(), it]),
+      // filtered.map((it) => [it.pubkey.toBase58(), it]),
+      realmsWithMints.fulfilledResults.map((it) => [it.pubkey.toBase58(), it]),
     );
   }
 
