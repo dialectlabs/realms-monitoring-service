@@ -13,7 +13,6 @@ export interface CachingEvent {
 export interface CachingStartedEvent extends CachingEvent {
   type: CachingEventType.Started;
   timeStarted: number;
-  maxTimeout: number;
 }
 
 export interface CachingFinishedEvent extends CachingEvent {
@@ -27,13 +26,17 @@ export enum CachingEventType {
 
 @Injectable()
 export class CachingHealth extends HealthIndicator {
+  private static readonly MAX_CACHING_EXECUTION_TIME_MILLIS = process.env
+    .MAX_CACHING_EXECUTION_TIME_MILLIS
+    ? parseInt(process.env.MAX_CACHING_EXECUTION_TIME_MILLIS, 10)
+    : 600000;
   private lastStartedCaching: number;
-  private lastTimeout: number;
   private cachingInProgress = false;
 
   public isHealthy(): HealthIndicatorResult {
     const isHealthy = this.cachingInProgress
-      ? Date.now() - this.lastStartedCaching < this.lastTimeout
+      ? Date.now() - this.lastStartedCaching <
+        CachingHealth.MAX_CACHING_EXECUTION_TIME_MILLIS
       : true;
     if (isHealthy) {
       return this.getStatus('caching', isHealthy);
@@ -45,8 +48,7 @@ export class CachingHealth extends HealthIndicator {
   }
 
   @OnEvent(CachingEventType.Started)
-  onCachingStarted({ timeStarted, maxTimeout }: CachingStartedEvent) {
-    this.lastTimeout = maxTimeout;
+  onCachingStarted({ timeStarted }: CachingStartedEvent) {
     this.lastStartedCaching = timeStarted;
     this.cachingInProgress = true;
   }

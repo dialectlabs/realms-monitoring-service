@@ -43,10 +43,6 @@ export interface RealmMints {
 
 @Injectable()
 export class RealmsRepository implements OnModuleInit {
-  private static readonly MAX_CACHING_EXECUTION_TIME_MILLIS = process.env
-    .MAX_CACHING_EXECUTION_TIME_MILLIS
-    ? parseInt(process.env.MAX_CACHING_EXECUTION_TIME_MILLIS, 10)
-    : 600000;
   private readonly logger = new Logger(RealmsRepository.name);
 
   splGovernancePrograms: PublicKey[] = [];
@@ -81,7 +77,6 @@ export class RealmsRepository implements OnModuleInit {
     this.cachingInProgress = true;
     const cachingStartedEvent: CachingStartedEvent = {
       timeStarted: Date.now(),
-      maxTimeout: RealmsRepository.MAX_CACHING_EXECUTION_TIME_MILLIS,
       type: CachingEventType.Started,
     };
     this.eventEmitter.emit(CachingEventType.Started, cachingStartedEvent);
