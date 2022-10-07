@@ -3,7 +3,7 @@ import {
   HealthIndicator,
   HealthIndicatorResult,
 } from '@nestjs/terminus';
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
 
 export interface CachingEvent {
@@ -30,6 +30,7 @@ export class CachingHealth extends HealthIndicator {
     .MAX_CACHING_EXECUTION_TIME_MILLIS
     ? parseInt(process.env.MAX_CACHING_EXECUTION_TIME_MILLIS, 10)
     : 600000;
+  private readonly logger = new Logger(CachingHealth.name);
   private lastStartedCaching: number;
   private cachingInProgress = false;
 
@@ -41,6 +42,9 @@ export class CachingHealth extends HealthIndicator {
     if (isHealthy) {
       return this.getStatus('caching', isHealthy);
     }
+    this.logger.error(
+      'Caching health check failed. Service needs to be restarted',
+    );
     throw new HealthCheckError(
       'Caching failed',
       this.getStatus('caching', isHealthy),
