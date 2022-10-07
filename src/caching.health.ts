@@ -28,12 +28,12 @@ export enum CachingEventType {
 @Injectable()
 export class CachingHealth extends HealthIndicator {
   private lastStartedCaching: number;
-  private lastTimout: number;
+  private lastTimeout: number;
   private cachingInProgress = false;
 
   public isHealthy(): HealthIndicatorResult {
     const isHealthy = this.cachingInProgress
-      ? Date.now() - this.lastStartedCaching < this.lastTimout
+      ? Date.now() - this.lastStartedCaching < this.lastTimeout
       : true;
     if (isHealthy) {
       return this.getStatus('caching', isHealthy);
@@ -45,14 +45,14 @@ export class CachingHealth extends HealthIndicator {
   }
 
   @OnEvent(CachingEventType.Started)
-  incrementIngestionAttempts({ timeStarted, maxTimeout }: CachingStartedEvent) {
-    this.lastTimout = maxTimeout;
+  onCachingStarted({ timeStarted, maxTimeout }: CachingStartedEvent) {
+    this.lastTimeout = maxTimeout;
     this.lastStartedCaching = timeStarted;
     this.cachingInProgress = true;
   }
 
   @OnEvent(CachingEventType.Finished)
-  resetIngestionAttempts() {
+  onCachingFinished() {
     this.cachingInProgress = false;
   }
 }
