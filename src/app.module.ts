@@ -17,6 +17,8 @@ import { NewProposalsMonitoringService } from './new-proposals-monitoring.servic
 import { ProposalStateChangeMonitoringService } from './proposal-state-monitoring.service';
 import { HealthController } from './health.controller';
 import { TerminusModule } from '@nestjs/terminus';
+import { CachingHealth } from './caching.health';
+import { EventEmitterModule } from '@nestjs/event-emitter';
 
 @Module({
   imports: [
@@ -24,6 +26,7 @@ import { TerminusModule } from '@nestjs/terminus';
     HttpModule,
     ScheduleModule.forRoot(),
     ConfigModule.forRoot(),
+    EventEmitterModule.forRoot(),
     LoggerModule.forRoot({
       pinoHttp: {
         autoLogging: process.env.ENVIRONMENT !== 'production',
@@ -42,6 +45,7 @@ import { TerminusModule } from '@nestjs/terminus';
   ],
   controllers: [HealthController],
   providers: [
+    CachingHealth,
     RealmsRestService,
     RealmsRepository,
     RealmsService,

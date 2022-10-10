@@ -15,6 +15,12 @@ import { RealmsRestService } from './realms-rest-service';
 import { allSettledWithErrorLogging } from './utils/error-handling-utils';
 import { MintInfo, MintLayout, u64 } from '@solana/spl-token';
 import * as BN from 'bn.js';
+import { EventEmitter2 } from '@nestjs/event-emitter';
+import {
+  CachingEventType,
+  CachingFinishedEvent,
+  CachingStartedEvent,
+} from './caching.health';
 
 const mainSplGovernanceProgram = new PublicKey(
   'GovER5Lthms3bLBqWub97yVrMmEogzX7xNjdXpPPCVZw',
@@ -50,7 +56,10 @@ export class RealmsRepository implements OnModuleInit {
   cachingInProgress = false;
   isInitialized: Promise<void>;
 
-  constructor(private readonly realmsRestService: RealmsRestService) {}
+  constructor(
+    private readonly realmsRestService: RealmsRestService,
+    private readonly eventEmitter: EventEmitter2,
+  ) {}
 
   async onModuleInit() {
     this.isInitialized = this.tryCacheData();
@@ -66,10 +75,19 @@ export class RealmsRepository implements OnModuleInit {
       return;
     }
     this.cachingInProgress = true;
+    const cachingStartedEvent: CachingStartedEvent = {
+      timeStarted: Date.now(),
+      type: CachingEventType.Started,
+    };
+    this.eventEmitter.emit(CachingEventType.Started, cachingStartedEvent);
     try {
       await this.cacheAccounts();
     } finally {
       this.cachingInProgress = false;
+      const cachingFinishedEvent: CachingFinishedEvent = {
+        type: CachingEventType.Finished,
+      };
+      this.eventEmitter.emit(CachingEventType.Finished, cachingFinishedEvent);
     }
   }
 
@@ -83,6 +101,7 @@ export class RealmsRepository implements OnModuleInit {
     const fetchedRealms = await this.getRealms(this.splGovernancePrograms);
     this.realms = Object.assign(this.realms, fetchedRealms);
     this.logger.log(`Found ${Object.values(this.realms).length} realms`);
+    this.logger.log('Start finding proposals');
     const fetchedProposals = await this.getProposalsByRealmPublicKey(
       Object.values(this.realms),
     );
@@ -181,7 +200,7 @@ export class RealmsRepository implements OnModuleInit {
     //     it.pubkey.toBase58() === 'By2sVGZXwfQq6rAiAM3rNPJ9iQfb5e2QhnF4YjJ4Bip',
     // );
     return Object.fromEntries(
-      // realmsWithMints.fulfilledResults.map((it) => [it.pubkey.toBase58(), it]),
+      // filtered.map((it) => [it.pubkey.toBase58(), it]),
       realmsWithMints.fulfilledResults.map((it) => [it.pubkey.toBase58(), it]),
     );
   }
