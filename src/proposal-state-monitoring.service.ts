@@ -9,6 +9,7 @@ import {
 import { Duration } from 'luxon';
 
 import { DialectSdk } from './dialect-sdk';
+import { NOTIF_TYPE_ID_PROPOSALS } from './main';
 import { ProposalData, RealmsService } from './realms.service';
 import {
   ProgramAccount,
@@ -17,6 +18,7 @@ import {
   Realm,
 } from '@solana/spl-governance';
 import { fmtTokenAmount, RealmMints } from './realms-repository';
+
 
 interface ProposalVotingStats {
   yesCount: number;
@@ -65,7 +67,11 @@ export class ProposalStateChangeMonitoringService implements OnModuleInit {
           }),
         ],
       })
-      .notify()
+      .notify({
+        type: {
+          id: NOTIF_TYPE_ID_PROPOSALS,
+        },
+      })
       .dialectSdk(
         ({ value, context }) => {
           const realmId: string = context.origin.realm.pubkey.toBase58();

@@ -8,6 +8,7 @@ import { Monitors, NotificationSink, Pipelines } from '@dialectlabs/monitor';
 import { Duration } from 'luxon';
 
 import { DialectSdk } from './dialect-sdk';
+import { NOTIF_TYPE_ID_PROPOSALS } from './main';
 import {
   ProposalWithMetadata,
   RealmData,
@@ -43,7 +44,11 @@ export class NewProposalsMonitoringService implements OnModuleInit {
           ),
         ],
       })
-      .notify()
+      .notify({
+        type: {
+          id: NOTIF_TYPE_ID_PROPOSALS,
+        },
+      })
       // .custom<DialectSdkNotification>(
       //   ({ value, context }) => {
       //     const realmName: string = context.origin.realm.account.name;

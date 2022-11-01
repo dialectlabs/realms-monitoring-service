@@ -3,6 +3,8 @@ import { AppModule } from './app.module';
 import { Logger } from 'nestjs-pino';
 import { VersioningType } from '@nestjs/common';
 
+export const NOTIF_TYPE_ID_PROPOSALS = '04827917-dde4-48c7-bf1b-780b77895e97'
+
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
     logger: ['log', 'warn', 'error'],
