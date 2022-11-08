@@ -8,6 +8,8 @@ export interface TwitterNotification {
 
 const maxMsgLen = 250;
 
+const mangoRealmPublicKey = 'DPiH3H3c7t47BMxqTxLsuPQpEC6Kne8GA9VXbxpnZxFE';
+
 export class TwitterNotificationsSink
   implements NotificationSink<TwitterNotification>
 {
@@ -22,14 +24,17 @@ export class TwitterNotificationsSink
     });
 
   async push({ message }: TwitterNotification): Promise<void> {
+    if (message.includes(mangoRealmPublicKey)) {
+      return;
+    }
     const shortenedText = message.replace(/\s+/g, ' ').slice(0, maxMsgLen);
+    this.logger.log(shortenedText);
     // TODO: replace links with 23 characters (https://help.twitter.com/en/using-twitter/how-to-tweet-a-link)
     // const lastIndexOfSpace = shortenedText.lastIndexOf(' ');
     // shortenedText =
     //   lastIndexOfSpace === -1
     //     ? shortenedText
     //     : shortenedText.slice(0, lastIndexOfSpace);
-    this.logger.log(shortenedText);
     this.twitterClient &&
       (await this.twitterClient.v2
         .tweet({
