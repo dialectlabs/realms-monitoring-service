@@ -61,7 +61,6 @@ import { EventEmitterModule } from '@nestjs/event-emitter';
         },
         dialectCloud: {
           url: process.env.DIALECT_SDK_DIALECT_CLOUD_URL,
-          tokenLifetimeMinutes: 60 * 24 * 180,
         },
         wallet: NodeDialectWalletAdapter.create(),
       }),
