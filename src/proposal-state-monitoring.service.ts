@@ -19,7 +19,6 @@ import {
 } from '@solana/spl-governance';
 import { fmtTokenAmount, RealmMints } from './realms-repository';
 
-
 interface ProposalVotingStats {
   yesCount: number;
   noCount: number;
@@ -45,7 +44,7 @@ export class ProposalStateChangeMonitoringService implements OnModuleInit {
       .defineDataSource<ProposalData>()
       .poll(
         async (subscribers) => this.realmsService.getProposalData(subscribers),
-        Duration.fromObject({ seconds: 30 }),
+        Duration.fromObject({ seconds: 60 }),
       )
       .transform<ProgramAccount<Proposal>, Change<ProgramAccount<Proposal>>>({
         keys: ['proposal'],

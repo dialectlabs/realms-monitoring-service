@@ -34,7 +34,7 @@ export class NewProposalsMonitoringService implements OnModuleInit {
       .defineDataSource<RealmData>()
       .poll(
         async (subscribers) => this.realmsService.getRealmsData(subscribers),
-        Duration.fromObject({ seconds: 30 }),
+        Duration.fromObject({ seconds: 60 }),
       )
       .transform<ProposalWithMetadata[], ProposalWithMetadata[]>({
         keys: ['proposals'],
