@@ -44,7 +44,7 @@ export class ProposalStateChangeMonitoringService implements OnModuleInit {
       .defineDataSource<ProposalData>()
       .poll(
         async (subscribers) => this.realmsService.getProposalData(subscribers),
-        Duration.fromObject({ seconds: 60 }),
+        Duration.fromObject({ minutes: 7 }),
       )
       .transform<ProgramAccount<Proposal>, Change<ProgramAccount<Proposal>>>({
         keys: ['proposal'],
