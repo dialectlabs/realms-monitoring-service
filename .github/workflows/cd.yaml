@@ -21,7 +21,7 @@ env:
 
 jobs:
   deployment:
-    name: Deployment
+    name: Create deployment PR
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -50,14 +50,13 @@ jobs:
           cat ${{ env.DEPLOYMENT_SCRIPTS_REPO }}/${{ env.SERVICE_RESOURCES_FILE }} |\
           ./hcledit attribute set locals.svc_${{ steps.service-name.outputs.service_name }}_image_version '"${{ inputs.service_image_tag }}"' \
           > ${{ env.SERVICE_RESOURCES_FILE }}
-      - name: Create pull request
-        uses: paygoc6/action-pull-request-another-repo@v1.0.1
+      - name: Create deployment pull request
         env:
           API_TOKEN_GITHUB: ${{ secrets.api_github_token }}
-        with:
-          source_folder: "terraform-plans"
-          destination_repo: ${{ env.DEPLOYMENT_SCRIPTS_REPO }}
-          destination_base_branch: 'main'
-          destination_head_branch: cd/${{ inputs.environment }}/${{ github.event.repository.name }}/${{ inputs.service_image_tag }}
-          user_email: ${{ github.event.pusher.email }}
-          user_name: ${{ github.actor }}
+          INPUT_SOURCE_FOLDER: "terraform-plans"
+          INPUT_DESTINATION_REPO: ${{ env.DEPLOYMENT_SCRIPTS_REPO }}
+          INPUT_DESTINATION_BASE_BRANCH: "main"
+          INPUT_DESTINATION_HEAD_BRANCH: cd/${{ inputs.environment }}/${{ github.event.repository.name }}/${{ inputs.service_image_tag }}
+          INPUT_USER_EMAIL: ${{ github.event.pusher.email }}
+          INPUT_USER_NAME: ${{ github.actor }}
+        run: "${GITHUB_WORKSPACE}/.github/create-pr.sh"

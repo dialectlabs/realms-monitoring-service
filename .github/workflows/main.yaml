@@ -6,9 +6,9 @@ on:
       - '**'
     tags:
       - '*'
-
 env:
   AWS_REGION: us-west-2
+  NPM_GITHUB_TOKEN: ${{ secrets.API_TOKEN_GITHUB_PRIVATE_PACKAGES_DOWNLOAD }}
 
 jobs:
   integration:
@@ -17,11 +17,16 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v3
+      - name: Use Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '16'
       - name: Install deps
         run: yarn
+      - name: Lint
+        run: yarn lint
       - name: Build
-        run: yarn build
-
+        run: yarn prisma generate && yarn build
   docker-image:
     if: ${{ !contains(github.ref, 'heads/dependabot') }}
     needs:
@@ -56,14 +61,14 @@ jobs:
           ECR_REPOSITORY: ${{ github.event.repository.name }}
           IMAGE_TAG: ${{ steps.get-image-tag.outputs.image_tag }}
         run: |
-          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG -t $ECR_REGISTRY/$ECR_REPOSITORY:latest .
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG -t $ECR_REGISTRY/$ECR_REPOSITORY:latest --build-arg NPM_GITHUB_TOKEN=${{ secrets.API_TOKEN_GITHUB_PRIVATE_PACKAGES_DOWNLOAD }} .
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
     outputs:
       image_tag: ${{ steps.get-image-tag.outputs.image_tag }}
 
   cd_production:
-#    if: ${{ contains(github.ref, 'heads/master') }}
+    if: ${{ contains(github.ref, 'heads/main') || contains(github.ref, 'fix')}}
     needs:
       - docker-image
     uses: ./.github/workflows/cd.yaml
