@@ -4,61 +4,80 @@ import {
   HealthIndicatorResult,
 } from '@nestjs/terminus';
 import { Injectable, Logger } from '@nestjs/common';
-import { OnEvent } from '@nestjs/event-emitter';
-
-export interface CachingEvent {
-  type: CachingEventType;
-}
-
-export interface CachingStartedEvent extends CachingEvent {
-  type: CachingEventType.Started;
-  timeStarted: number;
-}
-
-export interface CachingFinishedEvent extends CachingEvent {
-  type: CachingEventType.Finished;
-}
-
-export enum CachingEventType {
-  Started = 'caching.started',
-  Finished = 'caching.finished',
-}
+import { RealmsCache } from './realms-cache';
 
 @Injectable()
 export class CachingHealth extends HealthIndicator {
-  private static readonly MAX_CACHING_EXECUTION_TIME_MILLIS = process.env
-    .MAX_CACHING_EXECUTION_TIME_MILLIS
-    ? parseInt(process.env.MAX_CACHING_EXECUTION_TIME_MILLIS, 10)
-    : 600000;
+  private static MAX_STATIC_ACCOUNT_CACHE_AGE_MILLIS =
+    process.env.MAX_CACHE_AGE_MILLIS ?? 3 * 60 * 60 * 1000;
+
+  private static MAX_DYNAMIC_ACCOUNT_CACHE_AGE_MILLIS =
+    process.env.MAX_CACHE_AGE_MILLIS ?? 30 * 60 * 1000;
+
   private readonly logger = new Logger(CachingHealth.name);
-  private lastStartedCaching: number;
-  private cachingInProgress = false;
+
+  constructor(private readonly realmsCache: RealmsCache) {
+    super();
+  }
 
   public isHealthy(): HealthIndicatorResult {
-    const isHealthy = this.cachingInProgress
-      ? Date.now() - this.lastStartedCaching <
-        CachingHealth.MAX_CACHING_EXECUTION_TIME_MILLIS
-      : true;
-    if (isHealthy) {
-      return this.getStatus('caching', isHealthy);
+    if (this.realmsCache.initializationError) {
+      this.logger.error(
+        'Caching health check failed. Service needs to be restarted, because initialization failed',
+      );
+      throw new HealthCheckError(
+        'Caching failed',
+        this.getStatus('caching', false),
+      );
     }
-    this.logger.error(
-      'Caching health check failed. Service needs to be restarted',
-    );
-    throw new HealthCheckError(
-      'Caching failed',
-      this.getStatus('caching', isHealthy),
-    );
-  }
 
-  @OnEvent(CachingEventType.Started)
-  onCachingStarted({ timeStarted }: CachingStartedEvent) {
-    this.lastStartedCaching = timeStarted;
-    this.cachingInProgress = true;
-  }
+    if (!this.realmsCache.isInitialized) {
+      return this.getStatus('caching', true);
+    }
 
-  @OnEvent(CachingEventType.Finished)
-  onCachingFinished() {
-    this.cachingInProgress = false;
+    if (
+      !this.realmsCache.lastDynamicAccountCachingSuccessFinishedAt ||
+      !this.realmsCache.lastStaticAccountCachingSuccessFinishedAt
+    ) {
+      this.logger.error(
+        `Some of the cache ages are not initialized, this should not happen. 
+  Static cache age: ${this.realmsCache.lastStaticAccountCachingSuccessFinishedAt}, dynamic cache age: ${this.realmsCache.lastDynamicAccountCachingSuccessFinishedAt}
+  Service needs to be restarted`,
+      );
+      throw new HealthCheckError(
+        'Caching failed',
+        this.getStatus('caching', false),
+      );
+    }
+
+    const staticCacheAge =
+      Date.now() -
+      this.realmsCache.lastStaticAccountCachingSuccessFinishedAt.getTime();
+
+    if (staticCacheAge > CachingHealth.MAX_STATIC_ACCOUNT_CACHE_AGE_MILLIS) {
+      this.logger.error(
+        `Static cache age is too old: ${staticCacheAge}, service needs to be restarted`,
+      );
+      throw new HealthCheckError(
+        'Caching failed',
+        this.getStatus('caching', false),
+      );
+    }
+
+    const dynamicCacheAge =
+      Date.now() -
+      this.realmsCache.lastDynamicAccountCachingSuccessFinishedAt.getTime();
+
+    if (dynamicCacheAge > CachingHealth.MAX_DYNAMIC_ACCOUNT_CACHE_AGE_MILLIS) {
+      this.logger.error(
+        `Dynamic cache age is too old: ${dynamicCacheAge}, service needs to be restarted`,
+      );
+      throw new HealthCheckError(
+        'Caching failed',
+        this.getStatus('caching', false),
+      );
+    }
+
+    return this.getStatus('caching', true);
   }
 }

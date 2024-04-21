@@ -10,12 +10,12 @@ import { CachingHealth } from './caching.health';
 export class HealthController {
   constructor(
     private health: HealthCheckService,
-    private readonly dataIngestionHealth: CachingHealth,
+    private readonly cachingHealth: CachingHealth,
   ) {}
 
   @Get()
   @HealthCheck()
   check() {
-    return this.health.check([() => this.dataIngestionHealth.isHealthy()]);
+    return this.health.check([() => this.cachingHealth.isHealthy()]);
   }
 }

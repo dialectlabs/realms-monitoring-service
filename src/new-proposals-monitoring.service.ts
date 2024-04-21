@@ -1,10 +1,11 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
-import {
-  TwitterNotification,
-  TwitterNotificationsSink,
-} from './twitter-notifications-sink';
+import { Injectable, Logger } from '@nestjs/common';
 
-import { Monitors, NotificationSink, Pipelines } from '@dialectlabs/monitor';
+import {
+  DialectSdkNotification,
+  Monitor,
+  Monitors,
+  Pipelines,
+} from '@dialectlabs/monitor';
 import { Duration } from 'luxon';
 
 import { DialectSdk } from './dialect-sdk';
@@ -14,101 +15,112 @@ import {
   RealmData,
   RealmsService,
 } from './realms.service';
+import { ConsoleNotificationSink } from './console-notification-sink';
+import { OnEvent } from '@nestjs/event-emitter';
+import { CachingEventType } from './realms-cache';
 
 @Injectable()
-export class NewProposalsMonitoringService implements OnModuleInit {
-  private readonly twitterNotificationsSink: NotificationSink<TwitterNotification> =
-    new TwitterNotificationsSink();
+export class NewProposalsMonitoringService {
+  // private readonly twitterNotificationsSink: NotificationSink<TwitterNotification> =
+  //   new TwitterNotificationsSink();
 
   private readonly logger = new Logger(NewProposalsMonitoringService.name);
+
+  private readonly monitor: Monitor<RealmData> = this.createMonitor();
 
   constructor(
     private readonly sdk: DialectSdk,
     private readonly realmsService: RealmsService,
   ) {}
 
-  onModuleInit() {
-    const monitor = Monitors.builder({
-      sdk: this.sdk,
-    })
-      .defineDataSource<RealmData>()
-      .poll(
-        async (subscribers) => this.realmsService.getRealmsData(subscribers),
-        Duration.fromObject({ minutes: 7 }),
-      )
-      .transform<ProposalWithMetadata[], ProposalWithMetadata[]>({
-        keys: ['proposals'],
-        pipelines: [
-          Pipelines.added((p1, p2) =>
-            p1.proposal.pubkey.equals(p2.proposal.pubkey),
-          ),
-        ],
+  @OnEvent(CachingEventType.InitialCachingFinished)
+  onInitialCachingFinished() {
+    this.monitor.start().catch(this.logger.error);
+  }
+
+  createMonitor() {
+    return (
+      Monitors.builder({
+        sdk: this.sdk,
       })
-      .notify({
-        type: {
-          id: NOTIF_TYPE_ID_PROPOSALS,
-        },
-      })
-      // .custom<DialectSdkNotification>(
-      //   ({ value, context }) => {
-      //     const realmName: string = context.origin.realm.account.name;
-      //     const realmId: string = context.origin.realm.pubkey.toBase58();
-      //     const message: string = this.constructMessage(
-      //       realmName,
-      //       realmId,
-      //       value,
-      //     );
-      //     this.logger.log(
-      //       `Sending message for ${context.origin.subscribers.length} subscribers of realm ${realmId} : ${message}`,
-      //     );
-      //     return {
-      //       title: `New proposal for ${realmName}`,
-      //       message,
-      //     };
-      //   },
-      //   new ConsoleNotificationSink(),
-      //   {
-      //     dispatch: 'multicast',
-      //     to: (ctx) => ctx.origin.subscribers,
-      //   },
-      // )
-      .dialectSdk(
-        ({ value, context }) => {
-          const realmName: string = context.origin.realm.account.name;
-          const realmId: string = context.origin.realm.pubkey.toBase58();
-          const message: string = this.constructMessage(
-            realmName,
-            realmId,
-            value,
-          );
-          this.logger.log(
-            `Sending message for ${context.origin.subscribers.length} subscribers of realm ${realmId} : ${message}`,
-          );
-          return {
-            title: `New proposal for ${realmName}`,
-            message,
-          };
-        },
-        { dispatch: 'multicast', to: ({ origin }) => origin.subscribers },
-      )
-      .custom<TwitterNotification>(
-        ({ value, context }) => {
-          const realmName: string = context.origin.realm.account.name;
-          const realmId: string = context.origin.realm.pubkey.toBase58();
-          const message = this.constructMessage(realmName, realmId, value);
-          this.logger.log(`Sending tweet for ${realmName} : ${message}`);
-          return {
-            message,
-          };
-        },
-        this.twitterNotificationsSink,
-        {
-          dispatch: 'broadcast',
-        },
-      )
-      .and()
-      .build();
-    monitor.start();
+        .defineDataSource<RealmData>()
+        .poll(
+          async (subscribers) => this.realmsService.getRealmsData(subscribers),
+          Duration.fromObject({ minutes: 1 }),
+        )
+        .transform<ProposalWithMetadata[], ProposalWithMetadata[]>({
+          keys: ['proposals'],
+          pipelines: [
+            Pipelines.added((p1, p2) =>
+              p1.proposal.pubkey.equals(p2.proposal.pubkey),
+            ),
+          ],
+        })
+        .notify({
+          type: {
+            id: NOTIF_TYPE_ID_PROPOSALS,
+          },
+        })
+        .custom<DialectSdkNotification>(
+          ({ value, context }) => {
+            const realmName: string = context.origin.realm.account.name;
+            const realmId: string = context.origin.realm.pubkey.toBase58();
+            const message: string = this.constructMessage(
+              realmName,
+              realmId,
+              value,
+            );
+            this.logger.log(
+              `Sending message for ${context.origin.subscribers.length} subscribers of realm ${realmId} : ${message}`,
+            );
+            return {
+              title: `New proposal for ${realmName}`,
+              message,
+            };
+          },
+          new ConsoleNotificationSink(),
+          {
+            dispatch: 'multicast',
+            to: (ctx) => ctx.origin.subscribers,
+          },
+        )
+        // .dialectSdk(
+        //   ({ value, context }) => {
+        //     const realmName: string = context.origin.realm.account.name;
+        //     const realmId: string = context.origin.realm.pubkey.toBase58();
+        //     const message: string = this.constructMessage(
+        //       realmName,
+        //       realmId,
+        //       value,
+        //     );
+        //     this.logger.log(
+        //       `Sending message for ${context.origin.subscribers.length} subscribers of realm ${realmId} : ${message}`,
+        //     );
+        //     return {
+        //       title: `New proposal for ${realmName}`,
+        //       message,
+        //     };
+        //   },
+        //   { dispatch: 'multicast', to: ({ origin }) => origin.subscribers },
+        // )
+        // .custom<TwitterNotification>(
+        //   ({ value, context }) => {
+        //     const realmName: string = context.origin.realm.account.name;
+        //     const realmId: string = context.origin.realm.pubkey.toBase58();
+        //     const message = this.constructMessage(realmName, realmId, value);
+        //     this.logger.log(`Sending tweet for ${realmName} : ${message}`);
+        //     return {
+        //       message,
+        //     };
+        //   },
+        //   this.twitterNotificationsSink,
+        //   {
+        //     dispatch: 'broadcast',
+        //   },
+        // )
+        .and()
+        .build()
+    );
   }
 
   private constructMessage(

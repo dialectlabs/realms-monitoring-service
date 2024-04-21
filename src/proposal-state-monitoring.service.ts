@@ -1,8 +1,9 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 
 import {
   Change,
   DialectSdkNotification,
+  Monitor,
   Monitors,
   Pipelines,
 } from '@dialectlabs/monitor';
@@ -17,7 +18,9 @@ import {
   ProposalState,
   Realm,
 } from '@solana/spl-governance';
-import { fmtTokenAmount, RealmMints } from './realms-repository';
+import { CachingEventType, fmtTokenAmount, RealmMints } from './realms-cache';
+import { ConsoleNotificationSink } from './console-notification-sink';
+import { OnEvent } from '@nestjs/event-emitter';
 
 interface ProposalVotingStats {
   yesCount: number;
@@ -27,7 +30,9 @@ interface ProposalVotingStats {
 }
 
 @Injectable()
-export class ProposalStateChangeMonitoringService implements OnModuleInit {
+export class ProposalStateChangeMonitoringService {
+  private readonly monitor: Monitor<ProposalData> = this.createMonitor();
+
   constructor(
     private readonly sdk: DialectSdk,
     private readonly realmsService: RealmsService,
@@ -37,80 +42,91 @@ export class ProposalStateChangeMonitoringService implements OnModuleInit {
     ProposalStateChangeMonitoringService.name,
   );
 
-  onModuleInit() {
-    const monitor = Monitors.builder({
-      sdk: this.sdk,
-    })
-      .defineDataSource<ProposalData>()
-      .poll(
-        async (subscribers) => this.realmsService.getProposalData(subscribers),
-        Duration.fromObject({ minutes: 7 }),
-      )
-      .transform<ProgramAccount<Proposal>, Change<ProgramAccount<Proposal>>>({
-        keys: ['proposal'],
-        pipelines: [
-          Pipelines.change((p1, p2) => {
-            const terminalStates: ProposalState[] = [
-              ProposalState.ExecutingWithErrors,
-              ProposalState.Cancelled,
-              ProposalState.Succeeded,
-              ProposalState.Defeated,
-              ProposalState.Completed,
-            ];
-            const isChangedToTerminalState = Boolean(
-              terminalStates.find((it) => p2.account.state === it),
-            );
-            return (
-              p1.account.state === p2.account.state || !isChangedToTerminalState
-            );
-          }),
-        ],
+  @OnEvent(CachingEventType.InitialCachingFinished)
+  onInitialCachingFinished() {
+    this.monitor.start().catch(this.logger.error);
+  }
+
+  createMonitor() {
+    return (
+      Monitors.builder({
+        sdk: this.sdk,
       })
-      .notify({
-        type: {
-          id: NOTIF_TYPE_ID_PROPOSALS,
-        },
-      })
-      .dialectSdk(
-        ({ value, context }) => {
-          const realmId: string = context.origin.realm.pubkey.toBase58();
-          const notification = this.constructNotification(
-            context.origin.realm.account,
-            realmId,
-            value,
-          );
-          this.logger.log(
-            `Sending message for ${context.origin.realmSubscribers.length} subscribers of realm ${realmId}
+        .defineDataSource<ProposalData>()
+        .poll(
+          async (subscribers) =>
+            this.realmsService.getProposalData(subscribers),
+          Duration.fromObject({ minutes: 1 }),
+        )
+        .transform<ProgramAccount<Proposal>, Change<ProgramAccount<Proposal>>>({
+          keys: ['proposal'],
+          pipelines: [
+            Pipelines.change((p1, p2) => {
+              const terminalStates: ProposalState[] = [
+                ProposalState.ExecutingWithErrors,
+                ProposalState.Cancelled,
+                ProposalState.Succeeded,
+                ProposalState.Defeated,
+                ProposalState.Completed,
+              ];
+              const isChangedToTerminalState = Boolean(
+                terminalStates.find((it) => p2.account.state === it),
+              );
+              return (
+                p1.account.state === p2.account.state ||
+                !isChangedToTerminalState
+              );
+            }),
+          ],
+        })
+        .notify({
+          type: {
+            id: NOTIF_TYPE_ID_PROPOSALS,
+          },
+        })
+        // .dialectSdk(
+        //   ({ value, context }) => {
+        //     const realmId: string = context.origin.realm.pubkey.toBase58();
+        //     const notification = this.constructNotification(
+        //       context.origin.realm.account,
+        //       realmId,
+        //       value,
+        //     );
+        //     this.logger.log(
+        //       `Sending message for ${context.origin.realmSubscribers.length} subscribers of realm ${realmId}
+        // ${notification.title}
+        // ${notification.message}
+        //             `,
+        //     );
+        //     return notification;
+        //   },
+        //   { dispatch: 'multicast', to: ({ origin }) => origin.realmSubscribers },
+        // )
+        .custom<DialectSdkNotification>(
+          ({ value, context }) => {
+            const realmId: string = context.origin.realm.pubkey.toBase58();
+            const notification = this.constructNotification(
+              context.origin.realm.account,
+              realmId,
+              value,
+            );
+            this.logger.log(
+              `Sending message for ${context.origin.realmSubscribers.length} subscribers of realm ${realmId}
       ${notification.title}
       ${notification.message}
                   `,
-          );
-          return notification;
-        },
-        { dispatch: 'multicast', to: ({ origin }) => origin.realmSubscribers },
-      )
-      //       .custom<DialectSdkNotification>(
-      //         ({ value, context }) => {
-      //           const realmId: string = context.origin.realm.pubkey.toBase58();
-      //           const notification = this.constructNotification(
-      //             context.origin.realm.account,
-      //             realmId,
-      //             value,
-      //           );
-      //           this.logger.log(
-      //             `Sending message for ${context.origin.realmSubscribers.length} subscribers of realm ${realmId}
-      // ${notification.title}
-      // ${notification.message}
-      //             `,
-      //           );
-      //           return notification;
-      //         },
-      //         new ConsoleNotificationSink(),
-      //         { dispatch: 'multicast', to: ({ origin }) => origin.realmSubscribers },
-      //       )
-      .and()
-      .build();
-    monitor.start();
+            );
+            return notification;
+          },
+          new ConsoleNotificationSink(),
+          {
+            dispatch: 'multicast',
+            to: ({ origin }) => origin.realmSubscribers,
+          },
+        )
+        .and()
+        .build()
+    );
   }
 
   private constructNotification(
