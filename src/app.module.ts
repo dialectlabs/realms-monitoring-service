@@ -11,7 +11,7 @@ import { DialectSdk } from './dialect-sdk';
 import { ConfigModule } from '@nestjs/config';
 import { RealmsRestService } from './realms-rest-service';
 import { RealmsService } from './realms.service';
-import { RealmsRepository } from './realms-repository';
+import { RealmsCache } from './realms-cache';
 import { ScheduleModule } from '@nestjs/schedule';
 import { NewProposalsMonitoringService } from './new-proposals-monitoring.service';
 import { ProposalStateChangeMonitoringService } from './proposal-state-monitoring.service';
@@ -45,9 +45,9 @@ import { EventEmitterModule } from '@nestjs/event-emitter';
   ],
   controllers: [HealthController],
   providers: [
+    RealmsCache,
     CachingHealth,
     RealmsRestService,
-    RealmsRepository,
     RealmsService,
     NewProposalsMonitoringService,
     ProposalStateChangeMonitoringService,

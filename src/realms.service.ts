@@ -7,9 +7,9 @@ import {
 } from '@solana/spl-governance';
 import { PublicKey } from '@solana/web3.js';
 import { Injectable, Logger } from '@nestjs/common';
-import { groupBy } from './utils/collection-utils';
-import { RealmsRepository } from './realms-repository';
-import { chain } from 'lodash';
+import { RealmsCache } from './realms-cache';
+import { chain, groupBy } from 'lodash';
+import * as process from 'process';
 
 export interface RealmData {
   realm: ProgramAccount<Realm>;
@@ -31,15 +31,16 @@ export interface ProposalData {
 
 @Injectable()
 export class RealmsService {
-  constructor(private readonly realmsRepository: RealmsRepository) {}
+  constructor(private readonly realmsCache: RealmsCache) {}
 
   private readonly logger = new Logger(RealmsService.name);
 
   async getRealmsData(
     subscribers: ResourceId[],
   ): Promise<SourceData<RealmData>[]> {
-    await this.realmsRepository.initialization();
-    const realms = Object.values(this.realmsRepository.realms);
+    this.checkInitialized();
+    this.logger.warn(`Getting realms data`);
+    const realms = Object.values(this.realmsCache.realms);
     const proposalsWithMetadataByRealmPublicKey =
       this.getProposalsGroupedByRealmPublicKey();
     const subscribersByRealmPublicKey = this.getSubscribers(subscribers);
@@ -61,28 +62,36 @@ export class RealmsService {
     return sourceData;
   }
 
+  private checkInitialized() {
+    if (!this.realmsCache.isInitialized) {
+      this.logger.error(
+        `Realms cache is not initialized, this function should not be called`,
+      );
+      throw new Error(`Realms cache is not initialized`);
+    }
+  }
+
   private getSubscribers(subscribers: ResourceId[]) {
-    const tokenOwnerRecordsByPublicKey =
-      this.realmsRepository.tokenOwnerRecordsByPublicKey;
+    const realmPublicKeyToTokenOwnerRecords =
+      this.realmsCache.tokenOwnerRecordsByRealm;
     const subscribersByPublicKey = Object.fromEntries(
       subscribers.map((it) => [it.toBase58(), it]),
     );
-    const realmPublicKeyToTokenOwnerRecords: Record<
-      string,
-      ProgramAccount<TokenOwnerRecord>[]
-    > = groupBy(Object.values(tokenOwnerRecordsByPublicKey), (it) =>
-      it.account.realm.toBase58(),
-    );
 
     const subscribersByRealmPublicKey = Object.fromEntries(
-      Object.entries(realmPublicKeyToTokenOwnerRecords).map(([k, v]) => [
-        k,
-        v.flatMap((it) => {
-          const subscriber =
-            subscribersByPublicKey[it.account.governingTokenOwner.toBase58()];
-          return subscriber ? [subscriber] : [];
-        }),
-      ]),
+      Object.entries(realmPublicKeyToTokenOwnerRecords).map(
+        ([realm, tokenOwnerRecords]) => [
+          realm,
+          tokenOwnerRecords.flatMap((it) => {
+            const subscriber =
+              subscribersByPublicKey[it.account.governingTokenOwner.toBase58()];
+            return subscriber ? [subscriber] : [];
+          }),
+        ],
+      ),
+    );
+    this.logger.warn(
+      `Got ${Object.values(subscribersByRealmPublicKey).length} subscribers`,
     );
     return subscribersByRealmPublicKey;
   }
@@ -90,8 +99,8 @@ export class RealmsService {
   async getProposalData(
     subscribers: ResourceId[],
   ): Promise<SourceData<ProposalData>[]> {
-    await this.realmsRepository.initialization();
-    const realms = Object.values(this.realmsRepository.realms);
+    this.checkInitialized();
+    const realms = Object.values(this.realmsCache.realms);
     const proposals = this.getProposalsGroupedByRealmPublicKey();
     const realmsByPublicKey = Object.fromEntries(
       realms.map((it) => [it.pubkey, it]),
@@ -132,10 +141,9 @@ export class RealmsService {
   }
 
   private getProposalsGroupedByRealmPublicKey() {
-    const proposalsGroupedByRealm =
-      this.realmsRepository.proposalsGroupedByRealm;
+    const proposalsGroupedByRealm = this.realmsCache.proposalsByRealm;
     const tokenOwnerRecordsByPublicKey =
-      this.realmsRepository.tokenOwnerRecordsByPublicKey;
+      this.realmsCache.tokenOwnerRecordsByPublickKey;
     const proposalsWithMetadataByRealmPublicKey: Record<
       string,
       ProposalWithMetadata[]
