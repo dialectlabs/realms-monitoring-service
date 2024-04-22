@@ -84,7 +84,28 @@ export class ProposalStateChangeMonitoringService {
             id: NOTIF_TYPE_ID_PROPOSALS,
           },
         })
-        // .dialectSdk(
+        .dialectSdk(
+          ({ value, context }) => {
+            const realmId: string = context.origin.realm.pubkey.toBase58();
+            const notification = this.constructNotification(
+              context.origin.realm.account,
+              realmId,
+              value,
+            );
+            this.logger.log(
+              `Sending message for ${context.origin.realmSubscribers.length} subscribers of realm ${realmId}
+        ${notification.title}
+        ${notification.message}
+                    `,
+            );
+            return notification;
+          },
+          {
+            dispatch: 'multicast',
+            to: ({ origin }) => origin.realmSubscribers,
+          },
+        )
+        // .custom<DialectSdkNotification>(
         //   ({ value, context }) => {
         //     const realmId: string = context.origin.realm.pubkey.toBase58();
         //     const notification = this.constructNotification(
@@ -100,30 +121,12 @@ export class ProposalStateChangeMonitoringService {
         //     );
         //     return notification;
         //   },
-        //   { dispatch: 'multicast', to: ({ origin }) => origin.realmSubscribers },
+        //   new ConsoleNotificationSink(),
+        //   {
+        //     dispatch: 'multicast',
+        //     to: ({ origin }) => origin.realmSubscribers,
+        //   },
         // )
-        .custom<DialectSdkNotification>(
-          ({ value, context }) => {
-            const realmId: string = context.origin.realm.pubkey.toBase58();
-            const notification = this.constructNotification(
-              context.origin.realm.account,
-              realmId,
-              value,
-            );
-            this.logger.log(
-              `Sending message for ${context.origin.realmSubscribers.length} subscribers of realm ${realmId}
-      ${notification.title}
-      ${notification.message}
-                  `,
-            );
-            return notification;
-          },
-          new ConsoleNotificationSink(),
-          {
-            dispatch: 'multicast',
-            to: ({ origin }) => origin.realmSubscribers,
-          },
-        )
         .and()
         .build()
     );

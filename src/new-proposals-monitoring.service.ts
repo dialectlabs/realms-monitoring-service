@@ -4,6 +4,7 @@ import {
   DialectSdkNotification,
   Monitor,
   Monitors,
+  NotificationSink,
   Pipelines,
 } from '@dialectlabs/monitor';
 import { Duration } from 'luxon';
@@ -18,11 +19,15 @@ import {
 import { ConsoleNotificationSink } from './console-notification-sink';
 import { OnEvent } from '@nestjs/event-emitter';
 import { CachingEventType } from './realms-cache';
+import {
+  TwitterNotification,
+  TwitterNotificationsSink,
+} from './twitter-notifications-sink';
 
 @Injectable()
 export class NewProposalsMonitoringService {
-  // private readonly twitterNotificationsSink: NotificationSink<TwitterNotification> =
-  //   new TwitterNotificationsSink();
+  private readonly twitterNotificationsSink: NotificationSink<TwitterNotification> =
+    new TwitterNotificationsSink();
 
   private readonly logger = new Logger(NewProposalsMonitoringService.name);
 
@@ -61,30 +66,7 @@ export class NewProposalsMonitoringService {
             id: NOTIF_TYPE_ID_PROPOSALS,
           },
         })
-        .custom<DialectSdkNotification>(
-          ({ value, context }) => {
-            const realmName: string = context.origin.realm.account.name;
-            const realmId: string = context.origin.realm.pubkey.toBase58();
-            const message: string = this.constructMessage(
-              realmName,
-              realmId,
-              value,
-            );
-            this.logger.log(
-              `Sending message for ${context.origin.subscribers.length} subscribers of realm ${realmId} : ${message}`,
-            );
-            return {
-              title: `New proposal for ${realmName}`,
-              message,
-            };
-          },
-          new ConsoleNotificationSink(),
-          {
-            dispatch: 'multicast',
-            to: (ctx) => ctx.origin.subscribers,
-          },
-        )
-        // .dialectSdk(
+        // .custom<DialectSdkNotification>(
         //   ({ value, context }) => {
         //     const realmName: string = context.origin.realm.account.name;
         //     const realmId: string = context.origin.realm.pubkey.toBase58();
@@ -101,23 +83,46 @@ export class NewProposalsMonitoringService {
         //       message,
         //     };
         //   },
-        //   { dispatch: 'multicast', to: ({ origin }) => origin.subscribers },
-        // )
-        // .custom<TwitterNotification>(
-        //   ({ value, context }) => {
-        //     const realmName: string = context.origin.realm.account.name;
-        //     const realmId: string = context.origin.realm.pubkey.toBase58();
-        //     const message = this.constructMessage(realmName, realmId, value);
-        //     this.logger.log(`Sending tweet for ${realmName} : ${message}`);
-        //     return {
-        //       message,
-        //     };
-        //   },
-        //   this.twitterNotificationsSink,
+        //   new ConsoleNotificationSink(),
         //   {
-        //     dispatch: 'broadcast',
+        //     dispatch: 'multicast',
+        //     to: (ctx) => ctx.origin.subscribers,
         //   },
         // )
+        .dialectSdk(
+          ({ value, context }) => {
+            const realmName: string = context.origin.realm.account.name;
+            const realmId: string = context.origin.realm.pubkey.toBase58();
+            const message: string = this.constructMessage(
+              realmName,
+              realmId,
+              value,
+            );
+            this.logger.log(
+              `Sending message for ${context.origin.subscribers.length} subscribers of realm ${realmId} : ${message}`,
+            );
+            return {
+              title: `New proposal for ${realmName}`,
+              message,
+            };
+          },
+          { dispatch: 'multicast', to: ({ origin }) => origin.subscribers },
+        )
+        .custom<TwitterNotification>(
+          ({ value, context }) => {
+            const realmName: string = context.origin.realm.account.name;
+            const realmId: string = context.origin.realm.pubkey.toBase58();
+            const message = this.constructMessage(realmName, realmId, value);
+            this.logger.log(`Sending tweet for ${realmName} : ${message}`);
+            return {
+              message,
+            };
+          },
+          this.twitterNotificationsSink,
+          {
+            dispatch: 'broadcast',
+          },
+        )
         .and()
         .build()
     );
