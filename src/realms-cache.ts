@@ -22,6 +22,7 @@ import {
 } from './realms-sdk';
 import { groupBy, keyBy } from 'lodash';
 import { EventEmitter2 } from '@nestjs/event-emitter';
+
 export interface CachingEvent {
   type: CachingEventType;
 }
@@ -33,6 +34,7 @@ export interface InitialCachingFinished extends CachingEvent {
 export enum CachingEventType {
   InitialCachingFinished = 'caching.initial_finished',
 }
+
 export interface RealmMints {
   mint?: RawMint;
   councilMint?: RawMint;

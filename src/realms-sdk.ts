@@ -82,9 +82,8 @@ export async function fetchRealmsWithMints(realms: ProgramAccount<Realm>[]) {
   const chunkedMints = chunk(mints, 100);
   for (const chunked of chunkedMints) {
     await sleepSecs(1);
-    const multipleAccountsInfo = await connection.getMultipleAccountsInfo(
-      chunked,
-    );
+    const multipleAccountsInfo =
+      await connection.getMultipleAccountsInfo(chunked);
     accInfoAcc.push(...multipleAccountsInfo);
   }
   const mintAccounts = compact(accInfoAcc);

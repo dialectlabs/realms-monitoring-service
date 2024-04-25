@@ -1,15 +1,9 @@
 import { ResourceId, SourceData } from '@dialectlabs/monitor';
-import {
-  ProgramAccount,
-  Proposal,
-  Realm,
-  TokenOwnerRecord,
-} from '@solana/spl-governance';
+import { ProgramAccount, Proposal, Realm } from '@solana/spl-governance';
 import { PublicKey } from '@solana/web3.js';
 import { Injectable, Logger } from '@nestjs/common';
 import { RealmsCache } from './realms-cache';
-import { chain, groupBy } from 'lodash';
-import * as process from 'process';
+import { chain } from 'lodash';
 
 export interface RealmData {
   realm: ProgramAccount<Realm>;

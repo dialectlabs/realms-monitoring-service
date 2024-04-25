@@ -9,7 +9,6 @@ import {
 } from '@dialectlabs/monitor';
 import { Duration } from 'luxon';
 
-import { DialectSdk } from './dialect-sdk';
 import { NOTIF_TYPE_ID_PROPOSALS } from './main';
 import { ProposalData, RealmsService } from './realms.service';
 import {
@@ -19,8 +18,9 @@ import {
   Realm,
 } from '@solana/spl-governance';
 import { CachingEventType, fmtTokenAmount, RealmMints } from './realms-cache';
-import { ConsoleNotificationSink } from './console-notification-sink';
 import { OnEvent } from '@nestjs/event-emitter';
+import { DialectSdk } from '@dialectlabs/sdk';
+import { Solana } from '@dialectlabs/blockchain-sdk-solana';
 
 interface ProposalVotingStats {
   yesCount: number;
@@ -34,7 +34,7 @@ export class ProposalStateChangeMonitoringService {
   private readonly monitor: Monitor<ProposalData> = this.createMonitor();
 
   constructor(
-    private readonly sdk: DialectSdk,
+    private readonly sdk: DialectSdk<Solana>,
     private readonly realmsService: RealmsService,
   ) {}
 
@@ -87,13 +87,14 @@ export class ProposalStateChangeMonitoringService {
         .dialectSdk(
           ({ value, context }) => {
             const realmId: string = context.origin.realm.pubkey.toBase58();
+            const realmName: string = context.origin.realm.account.name;
             const notification = this.constructNotification(
               context.origin.realm.account,
               realmId,
               value,
             );
             this.logger.log(
-              `Sending message for ${context.origin.realmSubscribers.length} subscribers of realm ${realmId}
+              `Sending message for ${context.origin.realmSubscribers.length} subscribers of realm ${realmName}
         ${notification.title}
         ${notification.message}
                     `,

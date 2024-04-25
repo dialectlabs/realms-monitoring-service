@@ -9,20 +9,20 @@ import {
 } from '@dialectlabs/monitor';
 import { Duration } from 'luxon';
 
-import { DialectSdk } from './dialect-sdk';
 import { NOTIF_TYPE_ID_PROPOSALS } from './main';
 import {
   ProposalWithMetadata,
   RealmData,
   RealmsService,
 } from './realms.service';
-import { ConsoleNotificationSink } from './console-notification-sink';
 import { OnEvent } from '@nestjs/event-emitter';
 import { CachingEventType } from './realms-cache';
 import {
   TwitterNotification,
   TwitterNotificationsSink,
 } from './twitter-notifications-sink';
+import { Solana } from '@dialectlabs/blockchain-sdk-solana';
+import { DialectSdk } from '@dialectlabs/sdk';
 
 @Injectable()
 export class NewProposalsMonitoringService {
@@ -34,7 +34,7 @@ export class NewProposalsMonitoringService {
   private readonly monitor: Monitor<RealmData> = this.createMonitor();
 
   constructor(
-    private readonly sdk: DialectSdk,
+    private readonly sdk: DialectSdk<Solana>,
     private readonly realmsService: RealmsService,
   ) {}
 
@@ -98,13 +98,16 @@ export class NewProposalsMonitoringService {
               realmId,
               value,
             );
-            this.logger.log(
-              `Sending message for ${context.origin.subscribers.length} subscribers of realm ${realmId} : ${message}`,
-            );
-            return {
+            const notification: DialectSdkNotification = {
               title: `New proposal for ${realmName}`,
               message,
             };
+            this.logger.log(
+              `Sending notification ${JSON.stringify(notification)} to ${
+                context.origin.subscribers.length
+              } subscribers of realm ${realmName}`,
+            );
+            return notification;
           },
           { dispatch: 'multicast', to: ({ origin }) => origin.subscribers },
         )
