@@ -15,7 +15,7 @@ import {
 import { RealmsRestService } from './realms-rest-service';
 import { HttpService } from '@nestjs/axios';
 import { chunk, compact, keyBy, uniqBy, zip } from 'lodash';
-import { parseMintAccountData } from './realms-cache';
+import { parseMintAccountData, RealmMints } from './realms-cache';
 import { sleepSecs } from 'twitter-api-v2/dist/v1/media-helpers.v1';
 
 const connection = new Connection(process.env.DIALECT_SDK_SOLANA_RPC_URL!);
@@ -111,15 +111,18 @@ export async function fetchRealmsWithMints(realms: ProgramAccount<Realm>[]) {
     (it) => it.address.toBase58(),
   );
 
-  const realmsWithMints = realms.map((it) => ({
-    ...it,
-    mints: {
-      mint: parsedRawMints[it.account.communityMint.toBase58()]?.parsed,
-      councilMint:
-        it.account.config.councilMint &&
-        parsedRawMints[it.account.config.councilMint.toBase58()]?.parsed,
-    },
-  }));
+  const realmsWithMints: ProgramAccount<Realm & RealmMints>[] = realms.map(
+    (it) => ({
+      ...it,
+      account: {
+        ...it.account,
+        mint: parsedRawMints[it.account.communityMint.toBase58()]?.parsed,
+        councilMint:
+          it.account.config.councilMint &&
+          parsedRawMints[it.account.config.councilMint.toBase58()]?.parsed,
+      },
+    }),
+  );
 
   return realmsWithMints;
 }

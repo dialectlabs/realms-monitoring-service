@@ -19,8 +19,9 @@ import {
 } from '@solana/spl-governance';
 import { CachingEventType, fmtTokenAmount, RealmMints } from './realms-cache';
 import { OnEvent } from '@nestjs/event-emitter';
-import { DialectSdk } from '@dialectlabs/sdk';
+import { DappMessageActionType, DialectSdk } from '@dialectlabs/sdk';
 import { Solana } from '@dialectlabs/blockchain-sdk-solana';
+import { amountToShortString } from './formatting-utilts';
 
 interface ProposalVotingStats {
   yesCount: number;
@@ -162,6 +163,8 @@ export class ProposalStateChangeMonitoringService {
     const { yesCount, noCount, relativeYesCount, relativeNoCount } =
       getVotingStats(account, realm);
 
+    const yesVotesFormatted = amountToShortString(yesCount);
+    const noVotesFormatted = amountToShortString(noCount);
     if (account.state === ProposalState.Succeeded) {
       return {
         title: `Proposal for ${realmName} is succeeded`,
@@ -169,7 +172,16 @@ export class ProposalStateChangeMonitoringService {
           account.name
         } for ${realmName} is succeeded with ${relativeYesCount.toFixed(
           1,
-        )}% of 👍 votes (${yesCount} 👍 / ${noCount} 👎): ${proposalLink}`,
+        )}% of 👍 votes (${yesVotesFormatted} 👍 / ${noVotesFormatted} 👎): ${proposalLink}`,
+        actions: {
+          type: DappMessageActionType.LINK,
+          links: [
+            {
+              label: 'View Proposal',
+              url: proposalLink,
+            },
+          ],
+        },
       };
     }
     if (account.state === ProposalState.Defeated) {
@@ -179,7 +191,16 @@ export class ProposalStateChangeMonitoringService {
           account.name
         } for ${realmName} is defeated with ${relativeNoCount.toFixed(
           1,
-        )}% of 👎 votes (${yesCount} 👍 / ${noCount} 👎): ${proposalLink}`,
+        )}% of 👎 votes (${yesVotesFormatted} 👍 / ${noVotesFormatted} 👎): ${proposalLink}`,
+        actions: {
+          type: DappMessageActionType.LINK,
+          links: [
+            {
+              label: 'View Proposal',
+              url: proposalLink,
+            },
+          ],
+        },
       };
     }
     return {
