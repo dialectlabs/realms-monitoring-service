@@ -19,7 +19,12 @@ import {
 } from '@solana/spl-governance';
 import { CachingEventType, fmtTokenAmount, RealmMints } from './realms-cache';
 import { OnEvent } from '@nestjs/event-emitter';
-import { DappMessageActionType, DialectSdk } from '@dialectlabs/sdk';
+import {
+  DappMessageActionType,
+  DappMessageLinkAction,
+  DappMessageLinksAction,
+  DialectSdk,
+} from '@dialectlabs/sdk';
 import { Solana } from '@dialectlabs/blockchain-sdk-solana';
 import { amountToShortString } from './formatting-utilts';
 
@@ -141,22 +146,35 @@ export class ProposalStateChangeMonitoringService {
   ): DialectSdkNotification {
     const realmName: string = realm.name;
     const proposalLink = `https://realms.today/dao/${realmId}/proposal/${pubkey.toBase58()}`;
+    const actions: DappMessageLinksAction = {
+      type: DappMessageActionType.LINK,
+      links: [
+        {
+          label: 'View Proposal',
+          url: proposalLink,
+        },
+      ],
+    };
     if (account.state === ProposalState.ExecutingWithErrors) {
       return {
         title: `Proposal for ${realmName} is executing with errors`,
-        message: `Proposal ${account.name} for ${realmName} is executing with errors: ${proposalLink}`,
+        message: `Proposal ${account.name} for ${realmName} is executing with errors`,
+        actions,
       };
     }
     if (account.state === ProposalState.Cancelled) {
       return {
         title: `Proposal for ${realmName} is canceled`,
-        message: `Proposal ${account.name} for ${realmName} is canceled: ${proposalLink}`,
+        message: `Proposal ${account.name} for ${realmName} is canceled`,
+        actions,
       };
     }
+
     if (account.state === ProposalState.Completed) {
       return {
         title: `Proposal for ${realmName} is completed`,
-        message: `Proposal ${account.name} for ${realmName} is completed: ${proposalLink}`,
+        message: `Proposal ${account.name} for ${realmName} is completed`,
+        actions,
       };
     }
 
@@ -172,16 +190,8 @@ export class ProposalStateChangeMonitoringService {
           account.name
         } for ${realmName} is succeeded with ${relativeYesCount.toFixed(
           1,
-        )}% of 👍 votes (${yesVotesFormatted} 👍 / ${noVotesFormatted} 👎): ${proposalLink}`,
-        actions: {
-          type: DappMessageActionType.LINK,
-          links: [
-            {
-              label: 'View Proposal',
-              url: proposalLink,
-            },
-          ],
-        },
+        )}% of 👍 votes (${yesVotesFormatted} 👍 / ${noVotesFormatted} 👎)`,
+        actions,
       };
     }
     if (account.state === ProposalState.Defeated) {
@@ -191,16 +201,8 @@ export class ProposalStateChangeMonitoringService {
           account.name
         } for ${realmName} is defeated with ${relativeNoCount.toFixed(
           1,
-        )}% of 👎 votes (${yesVotesFormatted} 👍 / ${noVotesFormatted} 👎): ${proposalLink}`,
-        actions: {
-          type: DappMessageActionType.LINK,
-          links: [
-            {
-              label: 'View Proposal',
-              url: proposalLink,
-            },
-          ],
-        },
+        )}% of 👎 votes (${yesVotesFormatted} 👍 / ${noVotesFormatted} 👎)`,
+        actions,
       };
     }
     return {
@@ -209,7 +211,8 @@ export class ProposalStateChangeMonitoringService {
       }`,
       message: `Proposal ${account.name} for ${realmName} is ${
         ProposalState[account.state]?.toString() ?? 'changed'
-      }: ${proposalLink}`,
+      }`,
+      actions,
     };
   }
 }
