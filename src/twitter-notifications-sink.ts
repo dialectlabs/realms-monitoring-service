@@ -40,7 +40,7 @@ export class TwitterNotificationsSink
         .tweet({
           text: shortenedText,
         })
-        .catch(() => this.logger.error(it)));
+        .catch((e) => this.logger.error(e)));
     return;
   }
 }
