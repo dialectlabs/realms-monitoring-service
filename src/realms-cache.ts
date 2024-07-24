@@ -75,6 +75,7 @@ export class RealmsCache implements OnModuleInit {
     this.runInitialCacheAllAccounts().catch((e) => {
       this.initializationError = e;
       this.logger.error('Error during initial caching', e);
+      this.logger.error(e);
     });
   }
 
