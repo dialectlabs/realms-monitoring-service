@@ -22,6 +22,7 @@ import {
 } from './realms-sdk';
 import { groupBy, keyBy } from 'lodash';
 import { EventEmitter2 } from '@nestjs/event-emitter';
+import { retry } from './retry';
 
 export interface CachingEvent {
   type: CachingEventType;
@@ -99,7 +100,7 @@ export class RealmsCache implements OnModuleInit {
     );
   }
 
-  @Cron(CronExpression.EVERY_30_MINUTES, {
+  @Cron(CronExpression.EVERY_HOUR, {
     name: 'cacheStaticAccounts',
   })
   async periodicCacheStaticAccounts() {
@@ -118,10 +119,19 @@ export class RealmsCache implements OnModuleInit {
     }
     this.staticAccountCachingInProgress = true;
     try {
-      await this.cacheGovernancePrograms();
-      await this.cacheRealms();
-      await this.cacheGovernances();
-      await this.cacheTokenOwnerRecords();
+      await retry({
+        func: async () => {
+          await this.cacheGovernancePrograms();
+          await this.cacheRealms();
+          await this.cacheGovernances();
+          await this.cacheTokenOwnerRecords();
+        },
+        maxRetries: 3,
+        onError: (e) => {
+          this.logger.error('Error during caching of static accounts');
+          this.logger.error(e);
+        },
+      });
       this.lastStaticAccountCachingSuccessFinishedAt = new Date();
     } finally {
       this.staticAccountCachingInProgress = false;
@@ -148,7 +158,16 @@ export class RealmsCache implements OnModuleInit {
     }
     this.dynamicAccountCachingInProgress = true;
     try {
-      await this.cacheProposals();
+      await retry({
+        func: async () => {
+          await this.cacheProposals();
+        },
+        maxRetries: 3,
+        onError: (e) => {
+          this.logger.error('Error during caching of dynamic accounts');
+          this.logger.error(e);
+        },
+      });
       this.lastDynamicAccountCachingSuccessFinishedAt = new Date();
     } finally {
       this.dynamicAccountCachingInProgress = false;
